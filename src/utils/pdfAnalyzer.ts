@@ -23,6 +23,11 @@ export interface PDFStructure {
   fonts: string[];
   isEncrypted: boolean;
   isLinearized: boolean;
+  hasAnnotations: boolean;
+  hasLayers: boolean;
+  embeddedImagesCount: number;
+  linksCount: number;
+  formsCount: number;
 }
 
 export interface AnalysisCheck {
@@ -85,6 +90,8 @@ export async function analyzePDF(file: File): Promise<PDFAnalysisResult> {
     numPages: 0, fileSize: file.size, hasJavaScript: false,
     hasEmbeddedFiles: false, hasSignatures: false, fonts: [],
     isEncrypted: false, isLinearized: false,
+    hasAnnotations: false, hasLayers: false,
+    embeddedImagesCount: 0, linksCount: 0, formsCount: 0,
   };
   let rawText = '';
 
@@ -164,15 +171,44 @@ export async function analyzePDF(file: File): Promise<PDFAnalysisResult> {
           .join(' ');
         rawText += pageText + '\n';
 
-        // Сбор шрифтов
+        // Сбор шрифтов и подсчёт объектов
         const ops = await page.getOperatorList();
         for (let j = 0; j < ops.fnArray.length; j++) {
-          if (ops.fnArray[j] === pdfjsLib.OPS.setFont) {
+          const op = ops.fnArray[j];
+          if (op === pdfjsLib.OPS.setFont) {
             const fontName = ops.argsArray[j][0] as string;
             if (fontName && !structure.fonts.includes(fontName)) {
               structure.fonts.push(fontName);
             }
+          } else if (op === pdfjsLib.OPS.paintImageXObject || op === pdfjsLib.OPS.paintInlineImageXObject) {
+            structure.embeddedImagesCount++;
           }
+        }
+
+        // Подсчёт аннотаций
+        try {
+          const annotations = await page.getAnnotations();
+          structure.hasAnnotations = structure.hasAnnotations || annotations.length > 0;
+          
+          // Подсчёт ссылок
+          const links = annotations.filter((a: any) => a.subtype === 'Link' && a.url);
+          structure.linksCount += links.length;
+          
+          // Подсчёт форм
+          const formFields = annotations.filter((a: any) => a.subtype === 'Widget');
+          structure.formsCount += formFields.length;
+        } catch (annotationError) {
+          // Игнорируем ошибки аннотаций
+        }
+
+        // Проверка на слои (OCG - Optional Content Groups)
+        try {
+          const pageDict = await (page as any).pageInfo || {};
+          if (pageDict.hasOwnLayers || (page as any).optionalContent) {
+            structure.hasLayers = true;
+          }
+        } catch (layerError) {
+          // Игнорируем ошибки слоёв
         }
       } catch (pageError) {
         // Игнорируем ошибки отдельных страниц
@@ -205,6 +241,52 @@ export async function analyzePDF(file: File): Promise<PDFAnalysisResult> {
     const metaCheck = checkMetadataCompleteness(metadata);
     checks.push(metaCheck);
     if (metaCheck.status !== 'pass') warnings.push(metaCheck.description);
+
+    // 12. Проверка на аннотации
+    if (structure.hasAnnotations) {
+      checks.push({
+        name: 'Аннотации',
+        status: 'warning',
+        score: 70,
+        description: `Обнаружены аннотации в документе (${structure.linksCount} ссылок, ${structure.formsCount} форм)`,
+      });
+      warnings.push(`Документ содержит ${structure.linksCount} ссылок и ${structure.formsCount} форм`);
+    } else {
+      checks.push({
+        name: 'Аннотации',
+        status: 'pass',
+        score: 100,
+        description: 'Аннотации не обнаружены',
+      });
+    }
+
+    // 13. Проверка на скрытые слои
+    if (structure.hasLayers) {
+      checks.push({
+        name: 'Скрытые слои',
+        status: 'warning',
+        score: 60,
+        description: 'Обнаружены скрытые слои (OCG) — документ может содержать скрытую информацию',
+      });
+      warnings.push('Обнаружены скрытые слои');
+    } else {
+      checks.push({
+        name: 'Скрытые слои',
+        status: 'pass',
+        score: 100,
+        description: 'Скрытые слои не обнаружены',
+      });
+    }
+
+    // 14. Проверка на встроенные изображения
+    if (structure.embeddedImagesCount > 0) {
+      checks.push({
+        name: 'Встроенные изображения',
+        status: 'pass',
+        score: 100,
+        description: `Обнаружено ${structure.embeddedImagesCount} встроенных изображений`,
+      });
+    }
 
   } catch (error: any) {
     anomalies.push(`Ошибка парсинга PDF: ${error.message}`);

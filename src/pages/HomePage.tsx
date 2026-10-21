@@ -120,17 +120,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* Trusted by */}
-      <section className="py-12 bg-gray-900/50 border-y border-gray-800">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <p className="text-center text-gray-500 text-sm mb-8 uppercase tracking-wider">Нам доверяют ведущие компании мира</p>
-          <div className="flex flex-wrap items-center justify-center gap-8 md:gap-12 opacity-50">
-            {['Accenture', 'Amazon', 'Boeing', 'Deloitte', 'Siemens', 'Tesla', 'Red Bull', 'PepsiCo'].map((name) => (
-              <span key={name} className="text-gray-400 font-bold text-lg md:text-xl">{name}</span>
-            ))}
-          </div>
-        </div>
-      </section>
+
 
       {/* Features */}
       <section className="py-20 lg:py-32">
@@ -468,11 +458,11 @@ console.log("Статус:", result.status);
           <div className="text-center mb-16">
             <h2 className="text-3xl md:text-4xl font-bold mb-4">
               <span className="bg-gradient-to-r from-white to-gray-300 bg-clip-text text-transparent">
-                Нам доверяют компании по всему миру
+                Отзывы пользователей
               </span>
             </h2>
             <p className="text-gray-400 text-lg">
-              Отзывы клиентов, которые полагаются на DocVerify для верификации критически важных документов.
+              Что говорят о нас люди, которые используют DocVerify для проверки документов.
             </p>
           </div>
 

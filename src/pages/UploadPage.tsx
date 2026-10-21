@@ -2,9 +2,10 @@ import { useState, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { analyzePDF, type PDFAnalysisResult } from '../utils/pdfAnalyzer';
 import { analyzeImage, type ImageAnalysisResult } from '../utils/imageAnalyzer';
+import { analyzeWithAI, performELA, analyzeHistogram, type AIAnalysisResult } from '../utils/aiAnalyzer';
 import { computeFileHash, formatFileSize, detectFileType, saveAnalysisRecord } from '../utils/fileUtils';
 
-type AnalysisState = 'idle' | 'uploading' | 'analyzing' | 'complete' | 'error';
+type AnalysisState = 'idle' | 'analyzing' | 'complete' | 'error';
 
 interface FullResult {
   type: 'pdf' | 'image';
@@ -13,6 +14,18 @@ interface FullResult {
   fileHash: string;
   pdfResult?: PDFAnalysisResult;
   imageResult?: ImageAnalysisResult;
+  aiResult?: AIAnalysisResult;
+  elaResult?: {
+    meanError: number;
+    maxError: number;
+    suspiciousRegions: number;
+    isEdited: boolean;
+  };
+  histogramResult?: {
+    isManipulated: boolean;
+    anomalies: number;
+    description: string;
+  };
 }
 
 export default function UploadPage() {
@@ -21,6 +34,8 @@ export default function UploadPage() {
   const [result, setResult] = useState<FullResult | null>(null);
   const [error, setError] = useState('');
   const [progress, setProgress] = useState(0);
+  const [aiProgress, setAiProgress] = useState(0);
+  const [currentStep, setCurrentStep] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
 
@@ -29,6 +44,8 @@ export default function UploadPage() {
     setResult(null);
     setState('analyzing');
     setProgress(0);
+    setAiProgress(0);
+    setCurrentStep('Инициализация...');
 
     try {
       const fileType = detectFileType(file);
@@ -39,6 +56,7 @@ export default function UploadPage() {
       }
 
       // Вычисление хеша
+      setCurrentStep('Вычисление хеша файла...');
       setProgress(10);
       const hash = await computeFileHash(file);
       setProgress(20);
@@ -51,9 +69,11 @@ export default function UploadPage() {
       };
 
       if (fileType === 'pdf') {
+        // Анализ PDF
+        setCurrentStep('Анализ структуры PDF...');
         setProgress(40);
         const pdfResult = await analyzePDF(file);
-        setProgress(90);
+        setProgress(70);
         fullResult.pdfResult = pdfResult;
 
         saveAnalysisRecord({
@@ -69,10 +89,57 @@ export default function UploadPage() {
             : `Обнаружены аномалии: ${pdfResult.anomalies.length + pdfResult.warnings.length}`,
         });
       } else {
-        setProgress(40);
+        // Анализ изображения
+        setCurrentStep('Анализ метаданных изображения...');
+        setProgress(30);
         const imageResult = await analyzeImage(file);
-        setProgress(90);
+        setProgress(50);
         fullResult.imageResult = imageResult;
+
+        // ELA анализ
+        setCurrentStep('Выполнение Error Level Analysis...');
+        setProgress(60);
+        const elaResult = await performELA(file);
+        setProgress(70);
+        fullResult.elaResult = elaResult;
+
+        // Анализ гистограммы
+        setCurrentStep('Анализ гистограммы...');
+        setProgress(75);
+        const histogramResult = await analyzeHistogram(file);
+        setProgress(80);
+        fullResult.histogramResult = histogramResult;
+
+        // AI анализ (опционально)
+        setCurrentStep('Загрузка AI модели...');
+        setProgress(85);
+        const aiResult = await analyzeWithAI(file, (p) => {
+          setAiProgress(p);
+          setCurrentStep(`Загрузка AI модели... ${p}%`);
+        });
+        setProgress(95);
+        fullResult.aiResult = aiResult;
+
+        // Обновляем уровень риска на основе всех анализов
+        let riskLevel = imageResult.riskLevel;
+        let confidence = imageResult.confidence;
+
+        if (elaResult.isEdited) {
+          riskLevel = 'high';
+          confidence = Math.min(confidence, 30);
+        } else if (histogramResult.isManipulated) {
+          if (riskLevel === 'low') {
+            riskLevel = 'medium';
+            confidence = Math.min(confidence, 60);
+          }
+        }
+
+        if (aiResult.isAIGenerated) {
+          riskLevel = 'high';
+          confidence = Math.min(confidence, 25);
+        }
+
+        fullResult.imageResult = { ...imageResult, riskLevel, confidence };
 
         saveAnalysisRecord({
           id: hash.substring(0, 16),
@@ -80,15 +147,16 @@ export default function UploadPage() {
           fileType: 'image',
           fileSize: file.size,
           timestamp: Date.now(),
-          riskLevel: imageResult.riskLevel,
-          confidence: imageResult.confidence,
-          summary: imageResult.riskLevel === 'low'
+          riskLevel,
+          confidence,
+          summary: riskLevel === 'low'
             ? 'Изображение прошло проверку'
             : `Обнаружены аномалии: ${imageResult.anomalies.length + imageResult.warnings.length}`,
         });
       }
 
       setProgress(100);
+      setCurrentStep('Анализ завершён');
       setResult(fullResult);
       setState('complete');
     } catch (err: any) {
@@ -114,12 +182,14 @@ export default function UploadPage() {
     setResult(null);
     setError('');
     setProgress(0);
+    setAiProgress(0);
+    setCurrentStep('');
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   return (
     <div className="min-h-screen py-12">
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="text-center mb-10">
           <h1 className="text-3xl md:text-4xl font-bold mb-4">
             <span className="bg-gradient-to-r from-white to-gray-300 bg-clip-text text-transparent">
@@ -127,7 +197,7 @@ export default function UploadPage() {
             </span>
           </h1>
           <p className="text-gray-400 text-lg">
-            Загрузите PDF или изображение для реального анализа подлинности
+            Загрузите PDF или изображение для комплексного анализа подлинности
           </p>
         </div>
 
@@ -165,8 +235,8 @@ export default function UploadPage() {
               />
             </div>
 
-            <div className="mt-6 grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
-              {['Метаданные', 'Цифровые подписи', 'Следы редактирования', 'Структурный анализ'].map((item) => (
+            <div className="mt-6 grid grid-cols-2 md:grid-cols-5 gap-3 text-center">
+              {['Метаданные', 'ELA анализ', 'Гистограмма', 'AI детекция', 'Структура'].map((item) => (
                 <div key={item} className="bg-gray-800/50 rounded-lg p-3">
                   <p className="text-gray-400 text-xs">{item}</p>
                 </div>
@@ -176,7 +246,7 @@ export default function UploadPage() {
         )}
 
         {/* Analyzing */}
-        {(state === 'analyzing') && (
+        {state === 'analyzing' && (
           <div className="bg-gray-900 border border-gray-700 rounded-2xl p-8">
             <div className="text-center mb-8">
               <div className="w-16 h-16 mx-auto mb-4 relative">
@@ -184,27 +254,45 @@ export default function UploadPage() {
                 <div className="absolute inset-0 border-4 border-emerald-400 rounded-full border-t-transparent animate-spin"></div>
               </div>
               <h3 className="text-xl font-semibold text-white mb-2">Анализ документа</h3>
-              <p className="text-gray-400">Выполняется проверка подлинности...</p>
+              <p className="text-gray-400">{currentStep}</p>
             </div>
 
             <div className="max-w-md mx-auto">
               <div className="flex items-center justify-between text-sm text-gray-400 mb-2">
-                <span>Прогресс</span>
+                <span>Общий прогресс</span>
                 <span>{progress}%</span>
               </div>
-              <div className="h-3 bg-gray-800 rounded-full overflow-hidden">
+              <div className="h-3 bg-gray-800 rounded-full overflow-hidden mb-4">
                 <div
                   className="h-full bg-gradient-to-r from-emerald-500 to-blue-500 rounded-full transition-all duration-500"
                   style={{ width: `${progress}%` }}
                 ></div>
               </div>
+
+              {aiProgress > 0 && aiProgress < 100 && (
+                <>
+                  <div className="flex items-center justify-between text-sm text-gray-400 mb-2">
+                    <span>Загрузка AI модели</span>
+                    <span>{aiProgress}%</span>
+                  </div>
+                  <div className="h-2 bg-gray-800 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-gradient-to-r from-purple-500 to-pink-500 rounded-full transition-all duration-500"
+                      style={{ width: `${aiProgress}%` }}
+                    ></div>
+                  </div>
+                </>
+              )}
+
               <div className="mt-6 space-y-2 font-mono text-xs text-gray-500">
                 {progress >= 10 && <p className="text-emerald-400">✓ Вычисление хеша файла (SHA-256)</p>}
                 {progress >= 20 && <p className="text-emerald-400">✓ Определение типа документа</p>}
                 {progress >= 40 && <p className="text-emerald-400">✓ Извлечение метаданных</p>}
                 {progress >= 60 && <p className="text-emerald-400">✓ Анализ структуры</p>}
-                {progress >= 80 && <p className="text-emerald-400">✓ Проверка подписей и шифрования</p>}
-                {progress >= 90 && <p className="text-emerald-400">✓ Формирование отчёта</p>}
+                {progress >= 70 && <p className="text-emerald-400">✓ Error Level Analysis</p>}
+                {progress >= 80 && <p className="text-emerald-400">✓ Анализ гистограммы</p>}
+                {progress >= 90 && <p className="text-emerald-400">✓ AI детекция</p>}
+                {progress >= 95 && <p className="text-emerald-400">✓ Формирование отчёта</p>}
               </div>
             </div>
           </div>
@@ -238,6 +326,7 @@ export default function UploadPage() {
 
 function ResultsView({ result, onReset }: { result: FullResult; onReset: () => void }) {
   const navigate = useNavigate();
+  
   const riskColor = {
     low: 'text-emerald-400',
     medium: 'text-yellow-400',
@@ -329,7 +418,7 @@ function ResultsView({ result, onReset }: { result: FullResult; onReset: () => v
         </div>
       </div>
 
-      {/* Metadata */}
+      {/* PDF Metadata */}
       {result.type === 'pdf' && result.pdfResult && (
         <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6">
           <h3 className="text-lg font-semibold text-white mb-4">Метаданные PDF</h3>
@@ -342,24 +431,143 @@ function ResultsView({ result, onReset }: { result: FullResult; onReset: () => v
             <InfoRow label="Дата изменения" value={result.pdfResult.metadata.modificationDate || '—'} />
             <InfoRow label="Страниц" value={String(result.pdfResult.structure.numPages)} />
             <InfoRow label="Зашифрован" value={result.pdfResult.structure.isEncrypted ? 'Да' : 'Нет'} />
+            <InfoRow label="JavaScript" value={result.pdfResult.structure.hasJavaScript ? 'Обнаружен' : 'Нет'} />
+            <InfoRow label="Подписи" value={result.pdfResult.structure.hasSignatures ? 'Есть' : 'Нет'} />
+            <InfoRow label="Аннотации" value={result.pdfResult.structure.hasAnnotations ? 'Есть' : 'Нет'} />
+            <InfoRow label="Ссылки" value={String(result.pdfResult.structure.linksCount)} />
+            <InfoRow label="Формы" value={String(result.pdfResult.structure.formsCount)} />
+            <InfoRow label="Встроенные изображения" value={String(result.pdfResult.structure.embeddedImagesCount)} />
+            <InfoRow label="Скрытые слои" value={result.pdfResult.structure.hasLayers ? 'Обнаружены' : 'Нет'} />
+            <InfoRow label="Линеаризован" value={result.pdfResult.structure.isLinearized ? 'Да' : 'Нет'} />
           </div>
         </div>
       )}
 
+      {/* Image Metadata */}
       {result.type === 'image' && result.imageResult && (
-        <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6">
-          <h3 className="text-lg font-semibold text-white mb-4">Метаданные изображения</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <InfoRow label="Разрешение" value={`${result.imageResult.metadata.width}×${result.imageResult.metadata.height}`} />
-            <InfoRow label="Формат" value={result.imageResult.metadata.format} />
-            <InfoRow label="Камера" value={result.imageResult.exif.camera || '—'} />
-            <InfoRow label="ПО" value={result.imageResult.exif.software || '—'} />
-            <InfoRow label="Дата съёмки" value={result.imageResult.exif.dateTaken || '—'} />
-            <InfoRow label="ISO" value={result.imageResult.exif.iso ? String(result.imageResult.exif.iso) : '—'} />
-            <InfoRow label="Диафрагма" value={result.imageResult.exif.aperture ? `f/${result.imageResult.exif.aperture}` : '—'} />
-            <InfoRow label="Выдержка" value={result.imageResult.exif.exposureTime || '—'} />
+        <>
+          <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6">
+            <h3 className="text-lg font-semibold text-white mb-4">Метаданные изображения</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <InfoRow label="Разрешение" value={`${result.imageResult.metadata.width}×${result.imageResult.metadata.height}`} />
+              <InfoRow label="Формат" value={result.imageResult.metadata.format} />
+              <InfoRow label="Камера" value={result.imageResult.exif.camera || '—'} />
+              <InfoRow label="ПО" value={result.imageResult.exif.software || '—'} />
+              <InfoRow label="Дата съёмки" value={result.imageResult.exif.dateTaken || '—'} />
+              <InfoRow label="ISO" value={result.imageResult.exif.iso ? String(result.imageResult.exif.iso) : '—'} />
+              <InfoRow label="Диафрагма" value={result.imageResult.exif.aperture ? `f/${result.imageResult.exif.aperture}` : '—'} />
+              <InfoRow label="Выдержка" value={result.imageResult.exif.exposureTime || '—'} />
+              <InfoRow label="GPS" value={result.imageResult.exif.hasGPS ? `${result.imageResult.exif.gps?.lat.toFixed(4)}, ${result.imageResult.exif.gps?.lon.toFixed(4)}` : '—'} />
+            </div>
           </div>
-        </div>
+
+          {/* ELA Analysis */}
+          {result.elaResult && (
+            <div className={`border rounded-2xl p-6 ${
+              result.elaResult.isEdited 
+                ? 'bg-red-500/5 border-red-500/30' 
+                : 'bg-gray-900 border-gray-800'
+            }`}>
+              <h3 className="text-lg font-semibold text-white mb-4">
+                Error Level Analysis (ELA)
+              </h3>
+              <p className="text-gray-400 text-sm mb-4">
+                ELA выявляет области с разным уровнем сжатия, что указывает на возможное редактирование
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <InfoRow label="Средняя ошибка" value={result.elaResult.meanError.toFixed(2)} />
+                <InfoRow label="Максимальная ошибка" value={result.elaResult.maxError.toFixed(2)} />
+                <InfoRow 
+                  label="Подозрительные области" 
+                  value={`${result.elaResult.suspiciousRegions}%`}
+                />
+              </div>
+              <div className="mt-4">
+                <span className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-sm ${
+                  result.elaResult.isEdited 
+                    ? 'bg-red-500/20 text-red-400' 
+                    : 'bg-emerald-500/20 text-emerald-400'
+                }`}>
+                  {result.elaResult.isEdited ? '⚠ Обнаружены признаки редактирования' : '✓ Следы редактирования не обнаружены'}
+                </span>
+              </div>
+            </div>
+          )}
+
+          {/* Histogram Analysis */}
+          {result.histogramResult && (
+            <div className={`border rounded-2xl p-6 ${
+              result.histogramResult.isManipulated 
+                ? 'bg-yellow-500/5 border-yellow-500/30' 
+                : 'bg-gray-900 border-gray-800'
+            }`}>
+              <h3 className="text-lg font-semibold text-white mb-4">
+                Анализ гистограммы
+              </h3>
+              <p className="text-gray-400 text-sm mb-4">
+                {result.histogramResult.description}
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <InfoRow label="Аномалий обнаружено" value={String(result.histogramResult.anomalies)} />
+                <InfoRow 
+                  label="Статус" 
+                  value={result.histogramResult.isManipulated ? 'Подозрительно' : 'Нормально'}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* AI Analysis */}
+          {result.aiResult && (
+            <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6">
+              <h3 className="text-lg font-semibold text-white mb-4">
+                AI Детекция
+                {result.aiResult.modelLoaded && (
+                  <span className="ml-2 text-xs text-emerald-400">✓ Модель загружена</span>
+                )}
+              </h3>
+              {result.aiResult.error ? (
+                <p className="text-yellow-400 text-sm">{result.aiResult.error}</p>
+              ) : (
+                <>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                    <InfoRow 
+                      label="AI-сгенерировано" 
+                      value={result.aiResult.isAIGenerated ? 'Да' : 'Нет'}
+                    />
+                    <InfoRow 
+                      label="Уверенность AI" 
+                      value={`${result.aiResult.confidence}%`}
+                    />
+                  </div>
+                  {result.aiResult.labels.length > 0 && (
+                    <div>
+                      <p className="text-gray-400 text-sm mb-2">Классификация изображения:</p>
+                      <div className="space-y-2">
+                        {result.aiResult.labels.slice(0, 5).map((label, i) => (
+                          <div key={i} className="flex items-center justify-between">
+                            <span className="text-gray-300 text-sm">{label.label}</span>
+                            <div className="flex items-center gap-2">
+                              <div className="w-24 h-2 bg-gray-800 rounded-full overflow-hidden">
+                                <div 
+                                  className="h-full bg-gradient-to-r from-purple-500 to-pink-500 rounded-full"
+                                  style={{ width: `${label.score * 100}%` }}
+                                ></div>
+                              </div>
+                              <span className="text-gray-400 text-xs w-12 text-right">
+                                {(label.score * 100).toFixed(1)}%
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+        </>
       )}
 
       {/* Checks */}
