@@ -62,7 +62,7 @@ export async function analyzeImage(file: File): Promise<ImageAnalysisResult> {
   // Базовая информация об изображении
   const { width, height, format } = await getImageDimensions(file);
   
-  const metadata: ImageMetadata = {
+  const imageMetadata: ImageMetadata = {
     width,
     height,
     format,
@@ -114,8 +114,8 @@ export async function analyzeImage(file: File): Promise<ImageAnalysisResult> {
       exif.hasGPS = true;
     }
 
-    metadata.colorSpace = exifData.ColorSpace || null;
-    metadata.dpi = exifData.XResolution || null;
+    imageMetadata.colorSpace = exifData.ColorSpace || null;
+    imageMetadata.dpi = exifData.XResolution || null;
   }
 
   // === ПРОВЕРКИ ===
@@ -169,22 +169,31 @@ export async function analyzeImage(file: File): Promise<ImageAnalysisResult> {
 
   // 4. Проверка дат
   if (exif.dateTaken && exif.dateModified) {
-    const taken = new Date(exif.dateTaken);
-    const modified = new Date(exif.dateModified);
-    if (modified < taken) {
+    try {
+      const taken = new Date(exif.dateTaken);
+      const modified = new Date(exif.dateModified);
+      if (!isNaN(taken.getTime()) && !isNaN(modified.getTime()) && modified < taken) {
+        checks.push({
+          name: 'Согласованность дат',
+          status: 'fail',
+          score: 10,
+          description: 'Дата модификации раньше даты съёмки — аномалия!',
+        });
+        anomalies.push('Дата модификации раньше даты съёмки');
+      } else {
+        checks.push({
+          name: 'Согласованность дат',
+          status: 'pass',
+          score: 100,
+          description: `Даты согласованы: съёмка ${exif.dateTaken}, модификация ${exif.dateModified}`,
+        });
+      }
+    } catch {
       checks.push({
         name: 'Согласованность дат',
-        status: 'fail',
-        score: 10,
-        description: 'Дата модификации раньше даты съёмки — аномалия!',
-      });
-      anomalies.push('Дата модификации раньше даты съёмки');
-    } else {
-      checks.push({
-        name: 'Согласованность дат',
-        status: 'pass',
-        score: 100,
-        description: `Даты согласованы: съёмка ${exif.dateTaken}, модификация ${exif.dateModified}`,
+        status: 'warning',
+        score: 50,
+        description: 'Не удалось проанализировать даты',
       });
     }
   } else {
@@ -310,7 +319,7 @@ export async function analyzeImage(file: File): Promise<ImageAnalysisResult> {
     isValid: riskLevel === 'low',
     riskLevel,
     confidence,
-    metadata,
+    metadata: imageMetadata,
     exif,
     checks,
     warnings,
@@ -356,7 +365,7 @@ function checkFormatMatch(ext: string, mimeType: string): ImageCheck {
   };
 
   const expected = formatMap[ext] || [];
-  const matches = expected.includes(mimeType);
+  const matches = expected.length === 0 || expected.includes(mimeType);
 
   return {
     name: 'Соответствие формата',
@@ -370,5 +379,6 @@ function checkFormatMatch(ext: string, mimeType: string): ImageCheck {
 
 function formatDate(date: Date | string): string {
   if (typeof date === 'string') return date;
+  if (!(date instanceof Date) || isNaN(date.getTime())) return String(date);
   return date.toISOString().split('T')[0] + ' ' + date.toTimeString().split(' ')[0];
 }

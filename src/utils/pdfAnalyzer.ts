@@ -64,19 +64,19 @@ const SUSPICIOUS_PRODUCERS = [
 ];
 
 export async function analyzePDF(file: File): Promise<PDFAnalysisResult> {
-  const arrayBuffer = await file.arrayBuffer();
-  const uint8Array = new Uint8Array(arrayBuffer);
-  
   const checks: AnalysisCheck[] = [];
   const warnings: string[] = [];
   const anomalies: string[] = [];
 
-  // 1. Проверка заголовка PDF
-  const headerCheck = checkPDFHeader(uint8Array);
-  checks.push(headerCheck);
-  if (headerCheck.status === 'fail') anomalies.push(headerCheck.description);
+  // Получаем ArrayBuffer и сразу создаём копию для безопасной работы
+  const originalBuffer = await file.arrayBuffer();
+  
+  // Создаём копию данных для наших проверок (не будет отсоединена pdf.js)
+  const dataCopy = new Uint8Array(originalBuffer.slice(0));
+  
+  // Ещё одна копия для pdf.js (pdf.js может отсоединить свой буфер)
+  const pdfData = new Uint8Array(originalBuffer.slice(0));
 
-  // 2. Загрузка PDF через pdf.js
   let metadata: PDFMetadata = {
     title: null, author: null, subject: null, creator: null,
     producer: null, creationDate: null, modificationDate: null, keywords: null,
@@ -88,9 +88,46 @@ export async function analyzePDF(file: File): Promise<PDFAnalysisResult> {
   };
   let rawText = '';
 
+  // === ПРОВЕРКИ НА СЫРЫХ ДАННЫХ (до передачи в pdf.js) ===
+
+  // 1. Проверка заголовка PDF
+  const headerCheck = checkPDFHeader(dataCopy);
+  checks.push(headerCheck);
+  if (headerCheck.status === 'fail') anomalies.push(headerCheck.description);
+
+  // 2. Проверка на JavaScript в PDF
+  const jsCheck = checkForJavaScript(dataCopy);
+  checks.push(jsCheck);
+  if (jsCheck.status !== 'pass') {
+    structure.hasJavaScript = true;
+    warnings.push(jsCheck.description);
+  }
+
+  // 3. Проверка на встроенные файлы
+  const embeddedCheck = checkForEmbeddedFiles(dataCopy);
+  checks.push(embeddedCheck);
+  if (embeddedCheck.status !== 'pass') {
+    structure.hasEmbeddedFiles = true;
+    warnings.push(embeddedCheck.description);
+  }
+
+  // 4. Проверка на цифровые подписи
+  const sigCheck = checkForSignatures(dataCopy);
+  checks.push(sigCheck);
+  structure.hasSignatures = sigCheck.status === 'pass';
+
+  // 5. Проверка на линейность
+  structure.isLinearized = checkLinearization(dataCopy);
+
+  // 6. Проверка целостности структуры
+  const integrityCheck = checkStructuralIntegrity(dataCopy);
+  checks.push(integrityCheck);
+  if (integrityCheck.status !== 'pass') anomalies.push(integrityCheck.description);
+
+  // === ПАРСИНГ PDF через pdf.js ===
   try {
     const loadingTask = pdfjsLib.getDocument({
-      data: uint8Array,
+      data: pdfData,
       useSystemFonts: true,
       stopAtErrors: false,
     });
@@ -119,48 +156,30 @@ export async function analyzePDF(file: File): Promise<PDFAnalysisResult> {
 
     // Извлечение текста для анализа
     for (let i = 1; i <= Math.min(pdfDoc.numPages, 5); i++) {
-      const page = await pdfDoc.getPage(i);
-      const textContent = await page.getTextContent();
-      const pageText = textContent.items
-        .map((item: any) => item.str)
-        .join(' ');
-      rawText += pageText + '\n';
+      try {
+        const page = await pdfDoc.getPage(i);
+        const textContent = await page.getTextContent();
+        const pageText = textContent.items
+          .map((item: any) => item.str)
+          .join(' ');
+        rawText += pageText + '\n';
 
-      // Сбор шрифтов
-      const ops = await page.getOperatorList();
-      for (let j = 0; j < ops.fnArray.length; j++) {
-        if (ops.fnArray[j] === pdfjsLib.OPS.setFont) {
-          const fontName = ops.argsArray[j][0] as string;
-          if (fontName && !structure.fonts.includes(fontName)) {
-            structure.fonts.push(fontName);
+        // Сбор шрифтов
+        const ops = await page.getOperatorList();
+        for (let j = 0; j < ops.fnArray.length; j++) {
+          if (ops.fnArray[j] === pdfjsLib.OPS.setFont) {
+            const fontName = ops.argsArray[j][0] as string;
+            if (fontName && !structure.fonts.includes(fontName)) {
+              structure.fonts.push(fontName);
+            }
           }
         }
+      } catch (pageError) {
+        // Игнорируем ошибки отдельных страниц
       }
     }
 
-    // 3. Проверка на JavaScript в PDF
-    const jsCheck = checkForJavaScript(uint8Array);
-    checks.push(jsCheck);
-    if (jsCheck.status !== 'pass') {
-      structure.hasJavaScript = true;
-      warnings.push(jsCheck.description);
-    }
-
-    // 4. Проверка на встроенные файлы
-    const embeddedCheck = checkForEmbeddedFiles(uint8Array);
-    checks.push(embeddedCheck);
-    if (embeddedCheck.status !== 'pass') {
-      structure.hasEmbeddedFiles = true;
-      warnings.push(embeddedCheck.description);
-    }
-
-    // 5. Проверка на цифровые подписи
-    const sigCheck = checkForSignatures(uint8Array);
-    checks.push(sigCheck);
-    structure.hasSignatures = sigCheck.status === 'pass';
-
-    // 6. Проверка на линейность
-    structure.isLinearized = checkLinearization(uint8Array);
+    // === ПРОВЕРКИ НА ОСНОВЕ МЕТАДАННЫХ ===
 
     // 7. Анализ Producer/Creator на подозрительные редакторы
     const editorCheck = checkForSuspiciousEditors(metadata);
@@ -177,17 +196,12 @@ export async function analyzePDF(file: File): Promise<PDFAnalysisResult> {
     checks.push(fontCheck);
     if (fontCheck.status !== 'pass') warnings.push(fontCheck.description);
 
-    // 10. Проверка целостности структуры
-    const integrityCheck = checkStructuralIntegrity(uint8Array);
-    checks.push(integrityCheck);
-    if (integrityCheck.status !== 'pass') anomalies.push(integrityCheck.description);
-
-    // 11. Проверка размера файла
+    // 10. Проверка размера файла
     const sizeCheck = checkFileSize(file.size, structure.numPages);
     checks.push(sizeCheck);
     if (sizeCheck.status !== 'pass') warnings.push(sizeCheck.description);
 
-    // 12. Проверка метаданных на пустоту
+    // 11. Проверка метаданных на пустоту
     const metaCheck = checkMetadataCompleteness(metadata);
     checks.push(metaCheck);
     if (metaCheck.status !== 'pass') warnings.push(metaCheck.description);
@@ -236,60 +250,100 @@ export async function analyzePDF(file: File): Promise<PDFAnalysisResult> {
 }
 
 function checkPDFHeader(data: Uint8Array): AnalysisCheck {
-  const header = String.fromCharCode(...data.slice(0, 5));
-  const isValid = header.startsWith('%PDF-');
-  return {
-    name: 'Заголовок PDF',
-    status: isValid ? 'pass' : 'fail',
-    score: isValid ? 100 : 0,
-    description: isValid
-      ? 'Заголовок файла соответствует формату PDF'
-      : 'Заголовок файла не соответствует формату PDF — возможно, файл повреждён или переименован',
-  };
+  try {
+    const header = String.fromCharCode(...data.slice(0, 5));
+    const isValid = header.startsWith('%PDF-');
+    return {
+      name: 'Заголовок PDF',
+      status: isValid ? 'pass' : 'fail',
+      score: isValid ? 100 : 0,
+      description: isValid
+        ? 'Заголовок файла соответствует формату PDF'
+        : 'Заголовок файла не соответствует формату PDF — возможно, файл повреждён или переименован',
+    };
+  } catch (e) {
+    return {
+      name: 'Заголовок PDF',
+      status: 'fail',
+      score: 0,
+      description: 'Не удалось прочитать заголовок файла',
+    };
+  }
 }
 
 function checkForJavaScript(data: Uint8Array): AnalysisCheck {
-  const text = new TextDecoder('latin1').decode(data.slice(0, Math.min(data.length, 500000)));
-  const hasJS = /\/JavaScript|\/JS\s|\/OpenAction|\/AA\s/.test(text);
-  return {
-    name: 'JavaScript в PDF',
-    status: hasJS ? 'warning' : 'pass',
-    score: hasJS ? 40 : 100,
-    description: hasJS
-      ? 'Обнаружен JavaScript в документе — потенциальный вектор атаки'
-      : 'JavaScript не обнаружен в документе',
-  };
+  try {
+    const text = new TextDecoder('latin1').decode(data.slice(0, Math.min(data.length, 500000)));
+    const hasJS = /\/JavaScript|\/JS\s|\/OpenAction|\/AA\s/.test(text);
+    return {
+      name: 'JavaScript в PDF',
+      status: hasJS ? 'warning' : 'pass',
+      score: hasJS ? 40 : 100,
+      description: hasJS
+        ? 'Обнаружен JavaScript в документе — потенциальный вектор атаки'
+        : 'JavaScript не обнаружен в документе',
+    };
+  } catch (e) {
+    return {
+      name: 'JavaScript в PDF',
+      status: 'pass',
+      score: 100,
+      description: 'Проверка JavaScript не выполнена',
+    };
+  }
 }
 
 function checkForEmbeddedFiles(data: Uint8Array): AnalysisCheck {
-  const text = new TextDecoder('latin1').decode(data.slice(0, Math.min(data.length, 500000)));
-  const hasEmbedded = /\/EmbeddedFiles|\/EmbeddedFile/.test(text);
-  return {
-    name: 'Встроенные файлы',
-    status: hasEmbedded ? 'warning' : 'pass',
-    score: hasEmbedded ? 60 : 100,
-    description: hasEmbedded
-      ? 'Обнаружены встроенные файлы — требуется дополнительная проверка'
-      : 'Встроенные файлы не обнаружены',
-  };
+  try {
+    const text = new TextDecoder('latin1').decode(data.slice(0, Math.min(data.length, 500000)));
+    const hasEmbedded = /\/EmbeddedFiles|\/EmbeddedFile/.test(text);
+    return {
+      name: 'Встроенные файлы',
+      status: hasEmbedded ? 'warning' : 'pass',
+      score: hasEmbedded ? 60 : 100,
+      description: hasEmbedded
+        ? 'Обнаружены встроенные файлы — требуется дополнительная проверка'
+        : 'Встроенные файлы не обнаружены',
+    };
+  } catch (e) {
+    return {
+      name: 'Встроенные файлы',
+      status: 'pass',
+      score: 100,
+      description: 'Проверка не выполнена',
+    };
+  }
 }
 
 function checkForSignatures(data: Uint8Array): AnalysisCheck {
-  const text = new TextDecoder('latin1').decode(data.slice(0, Math.min(data.length, 500000)));
-  const hasSigs = /\/Sig|\/Signature|\/ByteRange/.test(text);
-  return {
-    name: 'Цифровые подписи',
-    status: hasSigs ? 'pass' : 'warning',
-    score: hasSigs ? 100 : 70,
-    description: hasSigs
-      ? 'Обнаружены цифровые подписи в документе'
-      : 'Цифровые подписи не обнаружены — документ не подписан',
-  };
+  try {
+    const text = new TextDecoder('latin1').decode(data.slice(0, Math.min(data.length, 500000)));
+    const hasSigs = /\/Sig|\/Signature|\/ByteRange/.test(text);
+    return {
+      name: 'Цифровые подписи',
+      status: hasSigs ? 'pass' : 'warning',
+      score: hasSigs ? 100 : 70,
+      description: hasSigs
+        ? 'Обнаружены цифровые подписи в документе'
+        : 'Цифровые подписи не обнаружены — документ не подписан',
+    };
+  } catch (e) {
+    return {
+      name: 'Цифровые подписи',
+      status: 'warning',
+      score: 50,
+      description: 'Проверка подписей не выполнена',
+    };
+  }
 }
 
 function checkLinearization(data: Uint8Array): boolean {
-  const text = new TextDecoder('latin1').decode(data.slice(0, 1024));
-  return /\/Linearized/.test(text);
+  try {
+    const text = new TextDecoder('latin1').decode(data.slice(0, 1024));
+    return /\/Linearized/.test(text);
+  } catch (e) {
+    return false;
+  }
 }
 
 function checkForSuspiciousEditors(metadata: PDFMetadata): AnalysisCheck {
@@ -337,35 +391,53 @@ function checkDates(metadata: PDFMetadata): AnalysisCheck {
     };
   }
 
-  const created = new Date(metadata.creationDate);
-  const modified = new Date(metadata.modificationDate);
+  try {
+    const created = new Date(metadata.creationDate);
+    const modified = new Date(metadata.modificationDate);
 
-  if (modified < created) {
+    if (isNaN(created.getTime()) || isNaN(modified.getTime())) {
+      return {
+        name: 'Анализ дат',
+        status: 'warning',
+        score: 50,
+        description: 'Некорректный формат дат в метаданных',
+      };
+    }
+
+    if (modified < created) {
+      return {
+        name: 'Анализ дат',
+        status: 'fail',
+        score: 10,
+        description: 'Дата модификации раньше даты создания — аномалия!',
+      };
+    }
+
+    // Проверка на будущие даты
+    const now = new Date();
+    if (created > now || modified > now) {
+      return {
+        name: 'Анализ дат',
+        status: 'fail',
+        score: 15,
+        description: 'Обнаружены даты в будущем — документ мог быть сфальсифицирован',
+      };
+    }
+
     return {
       name: 'Анализ дат',
-      status: 'fail',
-      score: 10,
-      description: 'Дата модификации раньше даты создания — аномалия!',
+      status: 'pass',
+      score: 100,
+      description: `Даты согласованы: создан ${metadata.creationDate}, изменён ${metadata.modificationDate}`,
     };
-  }
-
-  // Проверка на будущие даты
-  const now = new Date();
-  if (created > now || modified > now) {
+  } catch (e) {
     return {
       name: 'Анализ дат',
-      status: 'fail',
-      score: 15,
-      description: 'Обнаружены даты в будущем — документ мог быть сфальсифицирован',
+      status: 'warning',
+      score: 50,
+      description: 'Не удалось проанализировать даты',
     };
   }
-
-  return {
-    name: 'Анализ дат',
-    status: 'pass',
-    score: 100,
-    description: `Даты согласованы: создан ${metadata.creationDate}, изменён ${metadata.modificationDate}`,
-  };
 }
 
 function checkFontConsistency(fonts: string[]): AnalysisCheck {
@@ -396,37 +468,47 @@ function checkFontConsistency(fonts: string[]): AnalysisCheck {
 }
 
 function checkStructuralIntegrity(data: Uint8Array): AnalysisCheck {
-  const text = new TextDecoder('latin1').decode(data.slice(Math.max(0, data.length - 1024)));
-  const hasEOF = /%%EOF/.test(text);
-  
-  // Проверка на множественные %%EOF (может указывать на сращивание)
-  const fullText = new TextDecoder('latin1').decode(data);
-  const eofCount = (fullText.match(/%%EOF/g) || []).length;
+  try {
+    const tail = data.slice(Math.max(0, data.length - 1024));
+    const tailText = new TextDecoder('latin1').decode(tail);
+    const hasEOF = /%%EOF/.test(tailText);
+    
+    // Проверка на множественные %%EOF (может указывать на сращивание)
+    const fullText = new TextDecoder('latin1').decode(data.slice(0, Math.min(data.length, 100000)));
+    const eofCount = (fullText.match(/%%EOF/g) || []).length;
 
-  if (!hasEOF) {
+    if (!hasEOF) {
+      return {
+        name: 'Целостность структуры',
+        status: 'fail',
+        score: 20,
+        description: 'Отсутствует маркер %%EOF — файл может быть повреждён',
+      };
+    }
+
+    if (eofCount > 3) {
+      return {
+        name: 'Целостность структуры',
+        status: 'warning',
+        score: 55,
+        description: `Обнаружено ${eofCount} маркеров %%EOF — возможно сращивание документов`,
+      };
+    }
+
     return {
       name: 'Целостность структуры',
-      status: 'fail',
-      score: 20,
-      description: 'Отсутствует маркер %%EOF — файл может быть повреждён',
+      status: 'pass',
+      score: 100,
+      description: 'Структура PDF корректна',
     };
-  }
-
-  if (eofCount > 3) {
+  } catch (e) {
     return {
       name: 'Целостность структуры',
       status: 'warning',
-      score: 55,
-      description: `Обнаружено ${eofCount} маркеров %%EOF — возможно сращивание документов`,
+      score: 50,
+      description: 'Не удалось проверить целостность структуры',
     };
   }
-
-  return {
-    name: 'Целостность структуры',
-    status: 'pass',
-    score: 100,
-    description: 'Структура PDF корректна',
-  };
 }
 
 function checkFileSize(size: number, numPages: number): AnalysisCheck {
@@ -483,6 +565,8 @@ function checkMetadataCompleteness(metadata: PDFMetadata): AnalysisCheck {
 
 function formatDate(dateStr: string): string {
   // PDF даты в формате D:YYYYMMDDHHmmSS
+  if (typeof dateStr !== 'string') return String(dateStr);
+  
   if (dateStr.startsWith('D:')) {
     const d = dateStr.substring(2);
     const year = d.substring(0, 4);
