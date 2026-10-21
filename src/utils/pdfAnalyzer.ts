@@ -28,6 +28,8 @@ export interface PDFStructure {
   embeddedImagesCount: number;
   linksCount: number;
   formsCount: number;
+  incrementalUpdates: number;
+  xrefCount: number;
 }
 
 export interface AnalysisCheck {
@@ -92,6 +94,7 @@ export async function analyzePDF(file: File): Promise<PDFAnalysisResult> {
     isEncrypted: false, isLinearized: false,
     hasAnnotations: false, hasLayers: false,
     embeddedImagesCount: 0, linksCount: 0, formsCount: 0,
+    incrementalUpdates: 0, xrefCount: 0,
   };
   let rawText = '';
 
@@ -130,6 +133,19 @@ export async function analyzePDF(file: File): Promise<PDFAnalysisResult> {
   const integrityCheck = checkStructuralIntegrity(dataCopy);
   checks.push(integrityCheck);
   if (integrityCheck.status !== 'pass') anomalies.push(integrityCheck.description);
+
+  // 6.1. Детекция инкрементальных правок
+  const incrementalCheck = checkIncrementalUpdates(dataCopy);
+  checks.push(incrementalCheck);
+  structure.incrementalUpdates = incrementalCheck.count;
+  structure.xrefCount = incrementalCheck.xrefCount;
+  if (incrementalCheck.status !== 'pass') {
+    if (incrementalCheck.count > 2) {
+      anomalies.push(incrementalCheck.description);
+    } else {
+      warnings.push(incrementalCheck.description);
+    }
+  }
 
   // === ПАРСИНГ PDF через pdf.js ===
   try {
@@ -659,4 +675,61 @@ function formatDate(dateStr: string): string {
     return `${year}-${month}-${day} ${hour}:${min}`;
   }
   return dateStr;
+}
+
+interface IncrementalCheckResult extends AnalysisCheck {
+  count: number;
+  xrefCount: number;
+}
+
+function checkIncrementalUpdates(data: Uint8Array): IncrementalCheckResult {
+  try {
+    const text = new TextDecoder('latin1').decode(data);
+    
+    // Подсчёт xref таблиц (каждая инкрементальная правка добавляет новую xref)
+    const xrefMatches = text.match(/\bxref\b/g) || [];
+    const xrefCount = xrefMatches.length;
+    
+    // Подсчёт startxref (маркеры начала инкрементальных обновлений)
+    const startxrefMatches = text.match(/\bstartxref\b/g) || [];
+    const incrementalUpdates = startxrefMatches.length - 1; // Первое startxref — оригинал
+    
+    if (incrementalUpdates > 2) {
+      return {
+        name: 'Инкрементальные правки',
+        status: 'warning',
+        score: 50,
+        description: `Обнаружено ${incrementalUpdates} инкрементальных обновлений — документ редактировался после создания`,
+        count: incrementalUpdates,
+        xrefCount,
+      };
+    } else if (incrementalUpdates > 0) {
+      return {
+        name: 'Инкрементальные правки',
+        status: 'pass',
+        score: 85,
+        description: `Обнаружено ${incrementalUpdates} инкрементальных обновлений`,
+        count: incrementalUpdates,
+        xrefCount,
+      };
+    }
+    
+    return {
+      name: 'Инкрементальные правки',
+      status: 'pass',
+      score: 100,
+      description: 'Инкрементальные правки не обнаружены',
+      count: 0,
+      xrefCount,
+    };
+  } catch (e) {
+    return {
+      name: 'Инкрементальные правки',
+      status: 'warning',
+      score: 50,
+      description: 'Не удалось проверить инкрементальные правки',
+      count: 0,
+      xrefCount: 0,
+    };
+  }
 }

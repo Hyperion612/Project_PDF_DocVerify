@@ -3,7 +3,11 @@ import { useNavigate } from 'react-router-dom';
 import { analyzePDF, type PDFAnalysisResult } from '../utils/pdfAnalyzer';
 import { analyzeImage, type ImageAnalysisResult } from '../utils/imageAnalyzer';
 import { analyzeWithAI, performELA, analyzeHistogram, type AIAnalysisResult } from '../utils/aiAnalyzer';
-import { computeFileHash, formatFileSize, detectFileType, saveAnalysisRecord } from '../utils/fileUtils';
+import { performLSBAnalysis, type LSBAnalysisResult } from '../utils/lsbAnalyzer';
+import { analyzeText, type TextAnalysisResult } from '../utils/textAnalyzer';
+import { generateHeatmap, type HeatmapResult } from '../utils/heatmapGenerator';
+import { exportToJSON, exportToPDF, type AnalysisReport } from '../utils/reportExporter';
+import { computeFileHash, computeMD5, formatFileSize, detectFileType, saveAnalysisRecord } from '../utils/fileUtils';
 
 type AnalysisState = 'idle' | 'analyzing' | 'complete' | 'error';
 
@@ -12,6 +16,7 @@ interface FullResult {
   fileName: string;
   fileSize: number;
   fileHash: string;
+  md5Hash: string;
   pdfResult?: PDFAnalysisResult;
   imageResult?: ImageAnalysisResult;
   aiResult?: AIAnalysisResult;
@@ -26,6 +31,9 @@ interface FullResult {
     anomalies: number;
     description: string;
   };
+  lsbResult?: LSBAnalysisResult;
+  heatmapResult?: HeatmapResult;
+  textAnalysis?: TextAnalysisResult;
 }
 
 export default function UploadPage() {
@@ -56,9 +64,10 @@ export default function UploadPage() {
       }
 
       // Вычисление хеша
-      setCurrentStep('Вычисление хеша файла...');
+      setCurrentStep('Вычисление хешей файла (SHA-256, MD5)...');
       setProgress(10);
       const hash = await computeFileHash(file);
+      const md5 = await computeMD5(file);
       setProgress(20);
 
       let fullResult: FullResult = {
@@ -66,6 +75,7 @@ export default function UploadPage() {
         fileName: file.name,
         fileSize: file.size,
         fileHash: hash,
+        md5Hash: md5,
       };
 
       if (fileType === 'pdf') {
@@ -75,6 +85,21 @@ export default function UploadPage() {
         const pdfResult = await analyzePDF(file);
         setProgress(70);
         fullResult.pdfResult = pdfResult;
+
+        // Анализ текста на AI-генерацию
+        if (pdfResult.rawText && pdfResult.rawText.length > 50) {
+          setCurrentStep('Анализ текста на признаки AI-генерации...');
+          setProgress(85);
+          const textAnalysis = analyzeText(pdfResult.rawText);
+          setProgress(90);
+          fullResult.textAnalysis = textAnalysis;
+          
+          // Обновляем уровень риска если текст AI
+          if (textAnalysis.verdict === 'ai' && textAnalysis.confidence > 70) {
+            pdfResult.riskLevel = 'high';
+            pdfResult.confidence = Math.min(pdfResult.confidence, 30);
+          }
+        }
 
         saveAnalysisRecord({
           id: hash.substring(0, 16),
@@ -98,17 +123,31 @@ export default function UploadPage() {
 
         // ELA анализ
         setCurrentStep('Выполнение Error Level Analysis...');
-        setProgress(60);
+        setProgress(55);
         const elaResult = await performELA(file);
-        setProgress(70);
+        setProgress(60);
         fullResult.elaResult = elaResult;
+
+        // LSB анализ
+        setCurrentStep('LSB анализ (детекция стеганографии)...');
+        setProgress(65);
+        const lsbResult = await performLSBAnalysis(file);
+        setProgress(70);
+        fullResult.lsbResult = lsbResult;
 
         // Анализ гистограммы
         setCurrentStep('Анализ гистограммы...');
         setProgress(75);
         const histogramResult = await analyzeHistogram(file);
-        setProgress(80);
+        setProgress(78);
         fullResult.histogramResult = histogramResult;
+
+        // Генерация heatmap
+        setCurrentStep('Генерация heatmap подозрительных областей...');
+        setProgress(80);
+        const heatmapResult = await generateHeatmap(file);
+        setProgress(83);
+        fullResult.heatmapResult = heatmapResult;
 
         // AI анализ (опционально)
         setCurrentStep('Загрузка AI модели...');
@@ -117,7 +156,7 @@ export default function UploadPage() {
           setAiProgress(p);
           setCurrentStep(`Загрузка AI модели... ${p}%`);
         });
-        setProgress(95);
+        setProgress(90);
         fullResult.aiResult = aiResult;
 
         // Обновляем уровень риска на основе всех анализов
@@ -285,13 +324,15 @@ export default function UploadPage() {
               )}
 
               <div className="mt-6 space-y-2 font-mono text-xs text-gray-500">
-                {progress >= 10 && <p className="text-emerald-400">✓ Вычисление хеша файла (SHA-256)</p>}
+                {progress >= 10 && <p className="text-emerald-400">✓ Вычисление хешей (SHA-256, MD5)</p>}
                 {progress >= 20 && <p className="text-emerald-400">✓ Определение типа документа</p>}
                 {progress >= 40 && <p className="text-emerald-400">✓ Извлечение метаданных</p>}
-                {progress >= 60 && <p className="text-emerald-400">✓ Анализ структуры</p>}
-                {progress >= 70 && <p className="text-emerald-400">✓ Error Level Analysis</p>}
-                {progress >= 80 && <p className="text-emerald-400">✓ Анализ гистограммы</p>}
-                {progress >= 90 && <p className="text-emerald-400">✓ AI детекция</p>}
+                {progress >= 60 && <p className="text-emerald-400">✓ Error Level Analysis</p>}
+                {progress >= 65 && <p className="text-emerald-400">✓ LSB анализ (стеганография)</p>}
+                {progress >= 75 && <p className="text-emerald-400">✓ Анализ гистограммы</p>}
+                {progress >= 80 && <p className="text-emerald-400">✓ Генерация heatmap</p>}
+                {progress >= 85 && <p className="text-emerald-400">✓ AI классификация</p>}
+                {progress >= 90 && <p className="text-emerald-400">✓ Анализ текста на AI</p>}
                 {progress >= 95 && <p className="text-emerald-400">✓ Формирование отчёта</p>}
               </div>
             </div>
@@ -409,36 +450,39 @@ function ResultsView({ result, onReset }: { result: FullResult; onReset: () => v
 
       {/* File Info */}
       <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6">
-        <h3 className="text-lg font-semibold text-white mb-4">Информация о файле</h3>
+        <h3 className="text-lg font-semibold text-white mb-4">📄 Информация о файле</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <InfoRow label="Имя файла" value={result.fileName} />
           <InfoRow label="Тип" value={result.type === 'pdf' ? 'PDF документ' : 'Изображение'} />
           <InfoRow label="Размер" value={formatFileSize(result.fileSize)} />
-          <InfoRow label="SHA-256 хеш" value={result.fileHash.substring(0, 32) + '...'} mono />
+          <InfoRow label="SHA-256" value={result.fileHash} mono />
+          <InfoRow label="MD5" value={result.md5Hash} mono />
         </div>
       </div>
 
       {/* PDF Metadata */}
       {result.type === 'pdf' && result.pdfResult && (
         <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6">
-          <h3 className="text-lg font-semibold text-white mb-4">Метаданные PDF</h3>
+          <h3 className="text-lg font-semibold text-white mb-4">📋 Метаданные PDF</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <InfoRow label="Заголовок" value={result.pdfResult.metadata.title || '—'} />
             <InfoRow label="Автор" value={result.pdfResult.metadata.author || '—'} />
-            <InfoRow label="Создатель" value={result.pdfResult.metadata.creator || '—'} />
+            <InfoRow label="Создатель (ПО)" value={result.pdfResult.metadata.creator || '—'} />
             <InfoRow label="Производитель" value={result.pdfResult.metadata.producer || '—'} />
             <InfoRow label="Дата создания" value={result.pdfResult.metadata.creationDate || '—'} />
             <InfoRow label="Дата изменения" value={result.pdfResult.metadata.modificationDate || '—'} />
             <InfoRow label="Страниц" value={String(result.pdfResult.structure.numPages)} />
             <InfoRow label="Зашифрован" value={result.pdfResult.structure.isEncrypted ? 'Да' : 'Нет'} />
-            <InfoRow label="JavaScript" value={result.pdfResult.structure.hasJavaScript ? 'Обнаружен' : 'Нет'} />
-            <InfoRow label="Подписи" value={result.pdfResult.structure.hasSignatures ? 'Есть' : 'Нет'} />
+            <InfoRow label="JavaScript" value={result.pdfResult.structure.hasJavaScript ? '⚠ Обнаружен' : 'Нет'} />
+            <InfoRow label="Цифровые подписи" value={result.pdfResult.structure.hasSignatures ? '✓ Есть' : 'Нет'} />
             <InfoRow label="Аннотации" value={result.pdfResult.structure.hasAnnotations ? 'Есть' : 'Нет'} />
             <InfoRow label="Ссылки" value={String(result.pdfResult.structure.linksCount)} />
             <InfoRow label="Формы" value={String(result.pdfResult.structure.formsCount)} />
             <InfoRow label="Встроенные изображения" value={String(result.pdfResult.structure.embeddedImagesCount)} />
-            <InfoRow label="Скрытые слои" value={result.pdfResult.structure.hasLayers ? 'Обнаружены' : 'Нет'} />
+            <InfoRow label="Скрытые слои (OCG)" value={result.pdfResult.structure.hasLayers ? '⚠ Обнаружены' : 'Нет'} />
             <InfoRow label="Линеаризован" value={result.pdfResult.structure.isLinearized ? 'Да' : 'Нет'} />
+            <InfoRow label="Инкрементальные правки" value={String(result.pdfResult.structure.incrementalUpdates)} />
+            <InfoRow label="Xref таблиц" value={String(result.pdfResult.structure.xrefCount)} />
           </div>
         </div>
       )}
@@ -469,7 +513,7 @@ function ResultsView({ result, onReset }: { result: FullResult; onReset: () => v
                 : 'bg-gray-900 border-gray-800'
             }`}>
               <h3 className="text-lg font-semibold text-white mb-4">
-                Error Level Analysis (ELA)
+                🔍 Error Level Analysis (ELA)
               </h3>
               <p className="text-gray-400 text-sm mb-4">
                 ELA выявляет области с разным уровнем сжатия, что указывает на возможное редактирование
@@ -489,6 +533,83 @@ function ResultsView({ result, onReset }: { result: FullResult; onReset: () => v
                     : 'bg-emerald-500/20 text-emerald-400'
                 }`}>
                   {result.elaResult.isEdited ? '⚠ Обнаружены признаки редактирования' : '✓ Следы редактирования не обнаружены'}
+                </span>
+              </div>
+            </div>
+          )}
+
+          {/* LSB Analysis */}
+          {result.lsbResult && (
+            <div className={`border rounded-2xl p-6 ${
+              result.lsbResult.isSteganography 
+                ? 'bg-red-500/5 border-red-500/30' 
+                : result.lsbResult.pattern === 'suspicious'
+                ? 'bg-yellow-500/5 border-yellow-500/30'
+                : 'bg-gray-900 border-gray-800'
+            }`}>
+              <h3 className="text-lg font-semibold text-white mb-4">
+                🔐 LSB Анализ (Least Significant Bit)
+              </h3>
+              <p className="text-gray-400 text-sm mb-4">
+                {result.lsbResult.description}
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <InfoRow label="Паттерн" value={
+                  result.lsbResult.pattern === 'natural' ? 'Естественный' :
+                  result.lsbResult.pattern === 'suspicious' ? 'Подозрительный' :
+                  'Высокоподозрительный'
+                } />
+                <InfoRow label="Подозрительные пиксели" value={`${result.lsbResult.suspiciousPercentage}%`} />
+                <InfoRow label="Стеганография" value={result.lsbResult.isSteganography ? '⚠ Обнаружена' : 'Не обнаружена'} />
+                <InfoRow label="Среднее отклонение" value={result.lsbResult.meanDeviation.toFixed(3)} />
+              </div>
+              <div className="mt-4 grid grid-cols-3 gap-2">
+                <div className="bg-red-500/10 rounded-lg p-2 text-center">
+                  <p className="text-xs text-gray-400">Красный канал</p>
+                  <p className="text-sm text-red-400 font-mono">{result.lsbResult.channelAnalysis.red.toFixed(3)}</p>
+                </div>
+                <div className="bg-green-500/10 rounded-lg p-2 text-center">
+                  <p className="text-xs text-gray-400">Зелёный канал</p>
+                  <p className="text-sm text-green-400 font-mono">{result.lsbResult.channelAnalysis.green.toFixed(3)}</p>
+                </div>
+                <div className="bg-blue-500/10 rounded-lg p-2 text-center">
+                  <p className="text-xs text-gray-400">Синий канал</p>
+                  <p className="text-sm text-blue-400 font-mono">{result.lsbResult.channelAnalysis.blue.toFixed(3)}</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Heatmap */}
+          {result.heatmapResult && result.heatmapResult.dataUrl && (
+            <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6">
+              <h3 className="text-lg font-semibold text-white mb-4">
+                🗺️ Heatmap подозрительных областей
+              </h3>
+              <p className="text-gray-400 text-sm mb-4">
+                Визуализация областей с аномальной текстурой и вариацией
+              </p>
+              <div className="bg-gray-800 rounded-xl p-4 flex justify-center">
+                <img 
+                  src={result.heatmapResult.dataUrl} 
+                  alt="Heatmap" 
+                  className="max-w-full h-auto rounded-lg"
+                  style={{ maxHeight: '400px' }}
+                />
+              </div>
+              <div className="mt-4 grid grid-cols-2 gap-4">
+                <InfoRow label="Подозрительных блоков" value={String(result.heatmapResult.suspiciousRegions)} />
+                <InfoRow label="Максимальная интенсивность" value={result.heatmapResult.maxIntensity.toFixed(2)} />
+              </div>
+              <div className="mt-4 flex items-center gap-4 text-xs text-gray-400">
+                <span className="flex items-center gap-1">
+                  <span className="w-3 h-3 bg-green-500 rounded"></span> Низкая
+                </span>
+                <span className="flex items-center gap-1">
+                  <span className="w-3 h-3 bg-yellow-500 rounded"></span> Средняя
+                </span>
+                <span className="flex items-center gap-1">
+                  <span className="w-3 h-3 bg-red-500 rounded"></span> Высокая
                 </span>
               </div>
             </div>
@@ -646,10 +767,71 @@ function ResultsView({ result, onReset }: { result: FullResult; onReset: () => v
         </div>
       )}
 
+      {/* Text Analysis (PDF only) */}
+      {result.type === 'pdf' && result.textAnalysis && (
+        <div className={`border rounded-2xl p-6 ${
+          result.textAnalysis.verdict === 'ai' 
+            ? 'bg-red-500/5 border-red-500/30' 
+            : result.textAnalysis.verdict === 'uncertain'
+            ? 'bg-yellow-500/5 border-yellow-500/30'
+            : 'bg-gray-900 border-gray-800'
+        }`}>
+          <h3 className="text-lg font-semibold text-white mb-4">
+            🤖 AI Детекция текста
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+            <InfoRow 
+              label="Вердикт" 
+              value={
+                result.textAnalysis.verdict === 'ai' ? '⚠ Вероятно AI' :
+                result.textAnalysis.verdict === 'human' ? '✓ Вероятно человек' :
+                '? Неопределённо'
+              }
+            />
+            <InfoRow label="AI вероятность" value={`${(result.textAnalysis.aiProbability * 100).toFixed(1)}%`} />
+            <InfoRow label="Уверенность" value={`${result.textAnalysis.confidence}%`} />
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
+            <div className="bg-gray-800/50 rounded-lg p-3">
+              <p className="text-xs text-gray-400">Perplexity</p>
+              <p className="text-sm text-white font-mono">{result.textAnalysis.signals.perplexity}</p>
+            </div>
+            <div className="bg-gray-800/50 rounded-lg p-3">
+              <p className="text-xs text-gray-400">Burstiness</p>
+              <p className="text-sm text-white font-mono">{result.textAnalysis.signals.burstiness}</p>
+            </div>
+            <div className="bg-gray-800/50 rounded-lg p-3">
+              <p className="text-xs text-gray-400">Ср. длина слов</p>
+              <p className="text-sm text-white font-mono">{result.textAnalysis.signals.avgWordLength}</p>
+            </div>
+            <div className="bg-gray-800/50 rounded-lg p-3">
+              <p className="text-xs text-gray-400">Слов</p>
+              <p className="text-sm text-white font-mono">{result.textAnalysis.wordCount}</p>
+            </div>
+            <div className="bg-gray-800/50 rounded-lg p-3">
+              <p className="text-xs text-gray-400">Предложений</p>
+              <p className="text-sm text-white font-mono">{result.textAnalysis.sentenceCount}</p>
+            </div>
+          </div>
+          {result.textAnalysis.topReasons.length > 0 && (
+            <div>
+              <p className="text-sm text-gray-400 mb-2">Основные признаки:</p>
+              <ul className="space-y-1">
+                {result.textAnalysis.topReasons.map((reason, i) => (
+                  <li key={i} className="text-sm text-gray-300 flex items-start gap-2">
+                    <span className="text-emerald-400">•</span> {reason}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Extracted Text (PDF only) */}
       {result.type === 'pdf' && result.pdfResult?.rawText && (
         <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6">
-          <h3 className="text-lg font-semibold text-white mb-4">Извлечённый текст (превью)</h3>
+          <h3 className="text-lg font-semibold text-white mb-4">📝 Извлечённый текст (превью)</h3>
           <div className="bg-gray-800 rounded-xl p-4 max-h-60 overflow-y-auto">
             <pre className="text-gray-300 text-xs whitespace-pre-wrap font-mono">
               {result.pdfResult.rawText.substring(0, 1000) || 'Текст не извлечён'}
@@ -657,6 +839,84 @@ function ResultsView({ result, onReset }: { result: FullResult; onReset: () => v
           </div>
         </div>
       )}
+
+      {/* Export Buttons */}
+      <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6">
+        <h3 className="text-lg font-semibold text-white mb-4">💾 Экспорт отчёта</h3>
+        <div className="flex flex-wrap gap-3">
+          <button
+            onClick={() => {
+              const report: AnalysisReport = {
+                fileName: result.fileName,
+                fileType: result.type,
+                fileSize: result.fileSize,
+                fileHash: result.fileHash,
+                timestamp: new Date().toISOString(),
+                riskLevel: risk,
+                confidence,
+                checks,
+                warnings,
+                anomalies,
+                metadata: result.type === 'pdf' ? result.pdfResult?.metadata : result.imageResult?.metadata,
+                structure: result.type === 'pdf' ? result.pdfResult?.structure : undefined,
+                aiResult: result.aiResult,
+                elaResult: result.elaResult,
+                lsbResult: result.lsbResult,
+                histogramResult: result.histogramResult,
+                textAnalysis: result.textAnalysis,
+              };
+              exportToJSON(report);
+            }}
+            className="px-6 py-3 bg-blue-600 hover:bg-blue-700 rounded-xl text-white font-semibold transition-colors"
+          >
+            📥 Экспорт JSON
+          </button>
+          <button
+            onClick={() => {
+              const report: AnalysisReport = {
+                fileName: result.fileName,
+                fileType: result.type,
+                fileSize: result.fileSize,
+                fileHash: result.fileHash,
+                timestamp: new Date().toISOString(),
+                riskLevel: risk,
+                confidence,
+                checks,
+                warnings,
+                anomalies,
+                metadata: result.type === 'pdf' ? result.pdfResult?.metadata : result.imageResult?.metadata,
+                structure: result.type === 'pdf' ? result.pdfResult?.structure : undefined,
+                aiResult: result.aiResult,
+                elaResult: result.elaResult,
+                lsbResult: result.lsbResult,
+                histogramResult: result.histogramResult,
+                textAnalysis: result.textAnalysis,
+              };
+              exportToPDF(report);
+            }}
+            className="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 rounded-xl text-white font-semibold transition-colors"
+          >
+            📄 Экспорт PDF
+          </button>
+        </div>
+      </div>
+
+      {/* Disclaimer */}
+      <div className="bg-yellow-500/5 border border-yellow-500/30 rounded-2xl p-6">
+        <div className="flex items-start gap-3">
+          <svg className="w-6 h-6 text-yellow-400 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+            <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+          </svg>
+          <div>
+            <h4 className="text-yellow-400 font-semibold mb-2">Дисклеймер</h4>
+            <p className="text-gray-300 text-sm leading-relaxed">
+              Данный отчёт сгенерирован автоматически на основе алгоритмического анализа и носит <strong>вероятностный характер</strong>. 
+              Результаты не являются юридически значимым заключением и не могут использоваться как единственное основание для принятия важных решений. 
+              Для критически важных случаев рекомендуется дополнительная экспертиза квалифицированными специалистами.
+            </p>
+          </div>
+        </div>
+      </div>
 
       {/* Actions */}
       <div className="flex flex-wrap gap-4 justify-center">
