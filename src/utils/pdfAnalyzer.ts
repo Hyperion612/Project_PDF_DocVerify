@@ -3,34 +3,26 @@ import * as pdfjsLib from 'pdfjs-dist';
 // Настройка worker через CDN
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
 
-export interface PDFAnalysisResult {
-  isValid: boolean;
-  riskLevel: 'low' | 'medium' | 'high';
-  confidence: number;
-  metadata: {
-    title: string | null;
-    author: string | null;
-    subject: string | null;
-    creator: string | null;
-    producer: string | null;
-    creationDate: string | null;
-    modificationDate: string | null;
-    keywords: string | null;
-  };
-  structure: {
-    numPages: number;
-    fileSize: number;
-    hasJavaScript: boolean;
-    hasEmbeddedFiles: boolean;
-    hasSignatures: boolean;
-    fonts: string[];
-    isEncrypted: boolean;
-    isLinearized: boolean;
-  };
-  checks: AnalysisCheck[];
-  rawText: string;
-  warnings: string[];
-  anomalies: string[];
+export interface PDFMetadata {
+  title: string | null;
+  author: string | null;
+  subject: string | null;
+  creator: string | null;
+  producer: string | null;
+  creationDate: string | null;
+  modificationDate: string | null;
+  keywords: string | null;
+}
+
+export interface PDFStructure {
+  numPages: number;
+  fileSize: number;
+  hasJavaScript: boolean;
+  hasEmbeddedFiles: boolean;
+  hasSignatures: boolean;
+  fonts: string[];
+  isEncrypted: boolean;
+  isLinearized: boolean;
 }
 
 export interface AnalysisCheck {
@@ -38,6 +30,18 @@ export interface AnalysisCheck {
   status: 'pass' | 'warning' | 'fail';
   score: number;
   description: string;
+}
+
+export interface PDFAnalysisResult {
+  isValid: boolean;
+  riskLevel: 'low' | 'medium' | 'high';
+  confidence: number;
+  metadata: PDFMetadata;
+  structure: PDFStructure;
+  checks: AnalysisCheck[];
+  rawText: string;
+  warnings: string[];
+  anomalies: string[];
 }
 
 const SUSPICIOUS_EDITORS = [
@@ -73,12 +77,11 @@ export async function analyzePDF(file: File): Promise<PDFAnalysisResult> {
   if (headerCheck.status === 'fail') anomalies.push(headerCheck.description);
 
   // 2. Загрузка PDF через pdf.js
-  let pdfDoc;
-  let metadata: PDFAnalysisResult['metadata'] = {
+  let metadata: PDFMetadata = {
     title: null, author: null, subject: null, creator: null,
     producer: null, creationDate: null, modificationDate: null, keywords: null,
   };
-  let structure: PDFAnalysisResult['structure'] = {
+  let structure: PDFStructure = {
     numPages: 0, fileSize: file.size, hasJavaScript: false,
     hasEmbeddedFiles: false, hasSignatures: false, fonts: [],
     isEncrypted: false, isLinearized: false,
@@ -92,7 +95,7 @@ export async function analyzePDF(file: File): Promise<PDFAnalysisResult> {
       stopAtErrors: false,
     });
     
-    pdfDoc = await loadingTask.promise;
+    const pdfDoc = await loadingTask.promise;
     
     // Извлечение метаданных
     const meta = await pdfDoc.getMetadata().catch(() => null);
@@ -113,9 +116,6 @@ export async function analyzePDF(file: File): Promise<PDFAnalysisResult> {
     }
 
     structure.numPages = pdfDoc.numPages;
-    // Проверка шифрования через метаданные
-    const encryptMeta = meta?.info as any;
-    structure.isEncrypted = encryptMeta?.IsEncrypted === true || encryptMeta?.Filter != null;
 
     // Извлечение текста для анализа
     for (let i = 1; i <= Math.min(pdfDoc.numPages, 5); i++) {
@@ -292,7 +292,7 @@ function checkLinearization(data: Uint8Array): boolean {
   return /\/Linearized/.test(text);
 }
 
-function checkForSuspiciousEditors(metadata: PDFAnalysisResult['metadata']): AnalysisCheck {
+function checkForSuspiciousEditors(metadata: PDFMetadata): AnalysisCheck {
   const fields = [
     (metadata.creator || '').toLowerCase(),
     (metadata.producer || '').toLowerCase(),
@@ -300,7 +300,6 @@ function checkForSuspiciousEditors(metadata: PDFAnalysisResult['metadata']): Ana
 
   const found = SUSPICIOUS_EDITORS.filter(e => fields.includes(e));
   const hasProducer = SUSPICIOUS_PRODUCERS.filter(p => fields.includes(p));
-  const allFound = [...found, ...hasProducer];
 
   if (found.length > 0) {
     return {
@@ -328,7 +327,7 @@ function checkForSuspiciousEditors(metadata: PDFAnalysisResult['metadata']): Ana
   };
 }
 
-function checkDates(metadata: PDFAnalysisResult['metadata']): AnalysisCheck {
+function checkDates(metadata: PDFMetadata): AnalysisCheck {
   if (!metadata.creationDate || !metadata.modificationDate) {
     return {
       name: 'Анализ дат',
@@ -460,7 +459,7 @@ function checkFileSize(size: number, numPages: number): AnalysisCheck {
   };
 }
 
-function checkMetadataCompleteness(metadata: PDFAnalysisResult['metadata']): AnalysisCheck {
+function checkMetadataCompleteness(metadata: PDFMetadata): AnalysisCheck {
   const filled = Object.values(metadata).filter(v => v !== null && v !== '').length;
   const total = Object.keys(metadata).length;
   const ratio = filled / total;

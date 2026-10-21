@@ -1,34 +1,27 @@
 import exifr from 'exifr';
 
-export interface ImageAnalysisResult {
-  isValid: boolean;
-  riskLevel: 'low' | 'medium' | 'high';
-  confidence: number;
-  metadata: {
-    width: number;
-    height: number;
-    format: string;
-    colorSpace: string | null;
-    bitDepth: number | null;
-    dpi: number | null;
-  };
-  exif: {
-    camera: string | null;
-    lens: string | null;
-    software: string | null;
-    dateTaken: string | null;
-    dateModified: string | null;
-    gps: { lat: number; lon: number } | null;
-    iso: number | null;
-    focalLength: number | null;
-    aperture: number | null;
-    exposureTime: string | null;
-    hasGPS: boolean;
-    hasThumbnail: boolean;
-  };
-  checks: ImageCheck[];
-  warnings: string[];
-  anomalies: string[];
+export interface ImageMetadata {
+  width: number;
+  height: number;
+  format: string;
+  colorSpace: string | null;
+  bitDepth: number | null;
+  dpi: number | null;
+}
+
+export interface ImageExif {
+  camera: string | null;
+  lens: string | null;
+  software: string | null;
+  dateTaken: string | null;
+  dateModified: string | null;
+  gps: { lat: number; lon: number } | null;
+  iso: number | null;
+  focalLength: number | null;
+  aperture: number | null;
+  exposureTime: string | null;
+  hasGPS: boolean;
+  hasThumbnail: boolean;
 }
 
 export interface ImageCheck {
@@ -36,6 +29,17 @@ export interface ImageCheck {
   status: 'pass' | 'warning' | 'fail';
   score: number;
   description: string;
+}
+
+export interface ImageAnalysisResult {
+  isValid: boolean;
+  riskLevel: 'low' | 'medium' | 'high';
+  confidence: number;
+  metadata: ImageMetadata;
+  exif: ImageExif;
+  checks: ImageCheck[];
+  warnings: string[];
+  anomalies: string[];
 }
 
 const SUSPICIOUS_SOFTWARE = [
@@ -58,7 +62,7 @@ export async function analyzeImage(file: File): Promise<ImageAnalysisResult> {
   // Базовая информация об изображении
   const { width, height, format } = await getImageDimensions(file);
   
-  const metadata: ImageAnalysisResult['metadata'] = {
+  const metadata: ImageMetadata = {
     width,
     height,
     format,
@@ -75,7 +79,7 @@ export async function analyzeImage(file: File): Promise<ImageAnalysisResult> {
     // EXIF может отсутствовать
   }
 
-  const exif: ImageAnalysisResult['exif'] = {
+  const exif: ImageExif = {
     camera: null,
     lens: null,
     software: null,
