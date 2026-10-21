@@ -37,16 +37,16 @@ export default function HomePage() {
 
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-8">
               <Link
-                to="/"
+                to="/upload"
                 className="px-8 py-4 bg-gradient-to-r from-emerald-500 to-blue-600 rounded-xl text-lg font-semibold text-white hover:opacity-90 transition-opacity shadow-lg shadow-emerald-500/20"
               >
                 Проверить сейчас
               </Link>
               <Link
-                to="/about"
+                to="/how-it-works"
                 className="px-8 py-4 bg-gray-800 border border-gray-700 rounded-xl text-lg font-semibold text-gray-300 hover:bg-gray-700 transition-colors"
               >
-                Узнать больше
+                Как это работает
               </Link>
             </div>
 
@@ -87,28 +87,42 @@ export default function HomePage() {
                 onDragEnter={() => setDragActive(true)}
                 onDragLeave={() => setDragActive(false)}
                 onDragOver={(e) => e.preventDefault()}
-                onDrop={() => setDragActive(false)}
+                onDrop={(e) => {
+                  setDragActive(false);
+                  const file = e.dataTransfer.files[0];
+                  if (file) {
+                    // Сохраняем файл в sessionStorage и переходим на страницу загрузки
+                    sessionStorage.setItem('pending_file', 'true');
+                    window.location.hash = '#/upload';
+                  }
+                }}
               >
                 <svg className="w-12 h-12 mx-auto text-gray-500 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                 </svg>
                 <p className="text-gray-400 mb-2">Перетащите файл сюда</p>
                 <p className="text-gray-500 text-sm mb-4">Поддерживает PDF, PNG, JPG, JPEG (до 25МБ)</p>
-                <button className="px-6 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg text-sm text-white transition-colors">
+                <Link
+                  to="/upload"
+                  className="inline-block px-6 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg text-sm text-white transition-colors"
+                >
                   Выбрать файл
-                </button>
+                </Link>
               </div>
 
               <div className="mt-4 flex items-center justify-center gap-2">
                 <input type="checkbox" id="terms" className="rounded border-gray-600 bg-gray-800" />
                 <label htmlFor="terms" className="text-sm text-gray-400">
-                  Я согласен с <a href="#" className="text-emerald-400 hover:underline">Условиями использования</a> и <a href="#" className="text-emerald-400 hover:underline">Политикой конфиденциальности</a>
+                  Я согласен с <Link to="/privacy" className="text-emerald-400 hover:underline">Политикой конфиденциальности</Link>
                 </label>
               </div>
 
-              <button className="w-full mt-6 py-3 bg-gradient-to-r from-emerald-500 to-blue-600 rounded-xl text-white font-semibold hover:opacity-90 transition-opacity">
-                Проверить документ
-              </button>
+              <Link
+                to="/upload"
+                className="block w-full mt-6 py-3 bg-gradient-to-r from-emerald-500 to-blue-600 rounded-xl text-white font-semibold hover:opacity-90 transition-opacity text-center"
+              >
+                Перейти к проверке
+              </Link>
             </div>
           </div>
         </div>
@@ -524,20 +538,21 @@ console.log("Статус:", result.status);
             </span>
           </h2>
           <p className="text-gray-400 text-lg mb-8">
-            Присоединяйтесь к тысячам компаний, которые доверяют DocVerify для обеспечения подлинности документов.
+            Загрузите PDF или изображение и получите реальный анализ подлинности за секунды. 
+            Все проверки выполняются локально в вашем браузере.
           </p>
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
             <Link
-              to="/pricing"
+              to="/upload"
               className="px-8 py-4 bg-gradient-to-r from-emerald-500 to-blue-600 rounded-xl text-lg font-semibold text-white hover:opacity-90 transition-opacity shadow-lg shadow-emerald-500/20"
             >
-              Начать бесплатный период
+              Проверить документ сейчас
             </Link>
             <Link
-              to="/about"
+              to="/history"
               className="px-8 py-4 bg-gray-800 border border-gray-700 rounded-xl text-lg font-semibold text-gray-300 hover:bg-gray-700 transition-colors"
             >
-              Узнать больше →
+              История проверок →
             </Link>
           </div>
         </div>

@@ -18,7 +18,7 @@ export default function Footer() {
             </Link>
             <p className="text-gray-400 text-sm max-w-md">
               Передовая платформа обнаружения мошенничества с документами на базе искусственного интеллекта. 
-              Защищаем бизнес от подделок и манипуляций в режиме реального времени.
+              Реальный анализ метаданных, структуры, подписей и следов редактирования.
             </p>
             <div className="flex items-center gap-4 mt-4">
               <span className="inline-flex items-center gap-1 text-xs text-gray-500 bg-gray-800 px-2 py-1 rounded">
@@ -40,6 +40,8 @@ export default function Footer() {
             <h3 className="text-white font-semibold mb-4">Навигация</h3>
             <ul className="space-y-2">
               <li><Link to="/" className="text-gray-400 hover:text-white text-sm transition-colors">Главная</Link></li>
+              <li><Link to="/upload" className="text-gray-400 hover:text-white text-sm transition-colors">Проверить документ</Link></li>
+              <li><Link to="/history" className="text-gray-400 hover:text-white text-sm transition-colors">История проверок</Link></li>
               <li><Link to="/how-it-works" className="text-gray-400 hover:text-white text-sm transition-colors">Как это работает</Link></li>
               <li><Link to="/pricing" className="text-gray-400 hover:text-white text-sm transition-colors">Цены</Link></li>
               <li><Link to="/about" className="text-gray-400 hover:text-white text-sm transition-colors">О нас</Link></li>

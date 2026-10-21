@@ -7,6 +7,8 @@ import HowItWorksPage from './pages/HowItWorksPage';
 import PricingPage from './pages/PricingPage';
 import ContactPage from './pages/ContactPage';
 import PrivacyPage from './pages/PrivacyPage';
+import UploadPage from './pages/UploadPage';
+import HistoryPage from './pages/HistoryPage';
 
 function App() {
   return (
@@ -16,6 +18,8 @@ function App() {
         <main className="flex-1">
           <Routes>
             <Route path="/" element={<HomePage />} />
+            <Route path="/upload" element={<UploadPage />} />
+            <Route path="/history" element={<HistoryPage />} />
             <Route path="/about" element={<AboutPage />} />
             <Route path="/how-it-works" element={<HowItWorksPage />} />
             <Route path="/pricing" element={<PricingPage />} />

@@ -177,7 +177,7 @@ export default function HowItWorksPage() {
           <p className="text-gray-400 mb-8">Оцените мощь верификации документов на базе искусственного интеллекта.</p>
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
             <Link
-              to="/"
+              to="/upload"
               className="px-8 py-4 bg-gradient-to-r from-emerald-500 to-blue-600 rounded-xl text-white font-semibold hover:opacity-90 transition-opacity"
             >
               Проверить сейчас

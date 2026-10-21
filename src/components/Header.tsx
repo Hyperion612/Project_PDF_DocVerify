@@ -7,6 +7,8 @@ export default function Header() {
 
   const navLinks = [
     { to: '/', label: 'Главная' },
+    { to: '/upload', label: 'Проверить' },
+    { to: '/history', label: 'История' },
     { to: '/how-it-works', label: 'Как это работает' },
     { to: '/pricing', label: 'Цены' },
     { to: '/about', label: 'О нас' },
@@ -31,7 +33,7 @@ export default function Header() {
           </Link>
 
           {/* Desktop nav */}
-          <nav className="hidden md:flex items-center gap-6">
+          <nav className="hidden lg:flex items-center gap-5">
             {navLinks.map((link) => (
               <Link
                 key={link.to}
@@ -46,16 +48,16 @@ export default function Header() {
               </Link>
             ))}
             <Link
-              to="/"
-              className="ml-4 px-4 py-2 bg-gradient-to-r from-emerald-500 to-blue-600 rounded-lg text-sm font-semibold text-white hover:opacity-90 transition-opacity"
+              to="/upload"
+              className="ml-2 px-4 py-2 bg-gradient-to-r from-emerald-500 to-blue-600 rounded-lg text-sm font-semibold text-white hover:opacity-90 transition-opacity"
             >
-              Проверить документ
+              Загрузить файл
             </Link>
           </nav>
 
           {/* Mobile menu button */}
           <button
-            className="md:hidden p-2 text-gray-300"
+            className="lg:hidden p-2 text-gray-300"
             onClick={() => setMobileOpen(!mobileOpen)}
           >
             <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -70,7 +72,7 @@ export default function Header() {
 
         {/* Mobile nav */}
         {mobileOpen && (
-          <div className="md:hidden pb-4 border-t border-gray-800 pt-4">
+          <div className="lg:hidden pb-4 border-t border-gray-800 pt-4">
             {navLinks.map((link) => (
               <Link
                 key={link.to}
@@ -83,6 +85,13 @@ export default function Header() {
                 {link.label}
               </Link>
             ))}
+            <Link
+              to="/upload"
+              onClick={() => setMobileOpen(false)}
+              className="block mt-3 px-4 py-2 bg-gradient-to-r from-emerald-500 to-blue-600 rounded-lg text-sm font-semibold text-white text-center"
+            >
+              Загрузить файл
+            </Link>
           </div>
         )}
       </div>

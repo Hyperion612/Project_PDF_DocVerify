@@ -1,32 +1,58 @@
 import { useState } from 'react';
 
 export default function ContactPage() {
-  const [openFaq, setOpenFaq] = useState<number | null>(null);
+  const [openFaq, setOpenFaq] = useState<number | null>(0);
+  const [formData, setFormData] = useState({ name: '', email: '', subject: '', message: '' });
+  const [formState, setFormState] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle');
+  const [errors, setErrors] = useState<Record<string, string>>({});
+
+  const validate = () => {
+    const newErrors: Record<string, string> = {};
+    if (!formData.name.trim()) newErrors.name = 'Введите имя';
+    if (!formData.email.trim()) newErrors.email = 'Введите email';
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) newErrors.email = 'Некорректный email';
+    if (!formData.message.trim()) newErrors.message = 'Введите сообщение';
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!validate()) return;
+    
+    setFormState('sending');
+    
+    // Имитация отправки (в реальном проекте здесь был бы API запрос)
+    setTimeout(() => {
+      setFormState('sent');
+      setFormData({ name: '', email: '', subject: '', message: '' });
+    }, 1500);
+  };
 
   const faqs = [
     {
       q: 'Как выполняется проверка PDF?',
-      a: 'Наша система на базе ИИ анализирует документ по множеству параметров: метаданные, цифровые подписи, согласованность шрифтов, структурные аномалии и следы редактирования. Результат формируется менее чем за 10 секунд.'
+      a: 'Наша система на базе ИИ анализирует документ по множеству параметров: метаданные, цифровые подписи, согласованность шрифтов, структурные аномалии, следы редактирования и JavaScript. Результат формируется на основе реального анализа файла менее чем за 10 секунд.'
     },
     {
       q: 'Мои данные в безопасности?',
-      a: 'Абсолютно. Документы обрабатываются в зашифрованном контуре и не сохраняются на наших серверах после анализа. Мы сертифицированы по ISO 27001 и соответствуем стандарту SOC 2.'
+      a: 'Абсолютно. Документы обрабатываются локально в вашем браузере и не отправляются на сервер. Хеш файла вычисляется через SHA-256. Мы сертифицированы по ISO 27001 и соответствуем стандарту SOC 2.'
     },
     {
       q: 'Насколько точна проверка?',
-      a: 'Наша система демонстрирует точность свыше 99% при обнаружении подделок. Мы постоянно улучшаем алгоритмы, обучая их на миллионах документов из нашей базы.'
+      a: 'Наша система анализирует реальные метаданные, структуру PDF, цифровые подписи, шрифты и следы графических редакторов. Точность зависит от качества подделки, но система выявляет большинство распространённых манипуляций.'
     },
     {
       q: 'Какие форматы документов поддерживаются?',
-      a: 'Мы поддерживаем PDF, PNG, JPG и JPEG. Максимальный размер файла — 25 МБ. Для пакетной обработки доступны дополнительные форматы через API.'
+      a: 'Мы поддерживаем PDF, PNG, JPG и JPEG. Максимальный размер файла — 25 МБ. Для PDF анализируются метаданные, структура, подписи, JavaScript и шрифты. Для изображений — EXIF данные, параметры съёмки и следы редактирования.'
     },
     {
       q: 'Какие типы документов можно проверить?',
-      a: 'Финансовые документы (счета, выписки), удостоверения личности, договоры, сертификаты, медицинские записи, документы на недвижимость и многие другие типы.'
+      a: 'Финансовые документы (счета, выписки), удостоверения личности, договоры, сертификаты, медицинские записи, документы на недвижимость, фотографии и многие другие типы.'
     },
     {
-      q: 'Какие языки поддерживаются?',
-      a: 'Наша платформа поддерживает документы на множестве языков, включая русский, английский, немецкий, французский, испанский, китайский и другие.'
+      q: 'Где хранится история проверок?',
+      a: 'История проверок хранится исключительно в вашем браузере (localStorage). Никакие данные не передаются на наши серверы. Вы можете очистить историю в любой момент.'
     }
   ];
 
@@ -49,18 +75,104 @@ export default function ContactPage() {
         </div>
       </section>
 
-      {/* Contact Info */}
+      {/* Contact Form + Info */}
       <section className="py-16">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
+            {/* Form */}
             <div>
-              <h2 className="text-2xl font-bold text-white mb-6">Наша команда готова помочь</h2>
-              <p className="text-gray-400 mb-8">
-                Наша команда всегда готова ответить на ваши вопросы и оказать поддержку по всем аспектам 
-                использования наших услуг верификации PDF-документов.
-              </p>
+              <h2 className="text-2xl font-bold text-white mb-6">Напишите нам</h2>
+              
+              {formState === 'sent' ? (
+                <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-2xl p-8 text-center">
+                  <svg className="w-16 h-16 mx-auto text-emerald-400 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <h3 className="text-xl font-semibold text-white mb-2">Сообщение отправлено!</h3>
+                  <p className="text-gray-400 mb-6">Мы свяжемся с вами в ближайшее время.</p>
+                  <button
+                    onClick={() => setFormState('idle')}
+                    className="px-6 py-3 bg-gray-800 border border-gray-700 rounded-xl text-gray-300 hover:bg-gray-700 transition-colors"
+                  >
+                    Отправить ещё
+                  </button>
+                </div>
+              ) : (
+                <form onSubmit={handleSubmit} className="space-y-5">
+                  <div>
+                    <label className="block text-sm text-gray-400 mb-2">Имя *</label>
+                    <input
+                      type="text"
+                      value={formData.name}
+                      onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                      className={`w-full px-4 py-3 bg-gray-900 border rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 ${
+                        errors.name ? 'border-red-500' : 'border-gray-700'
+                      }`}
+                      placeholder="Ваше имя"
+                    />
+                    {errors.name && <p className="text-red-400 text-xs mt-1">{errors.name}</p>}
+                  </div>
 
-              <div className="space-y-6">
+                  <div>
+                    <label className="block text-sm text-gray-400 mb-2">Email *</label>
+                    <input
+                      type="email"
+                      value={formData.email}
+                      onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                      className={`w-full px-4 py-3 bg-gray-900 border rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 ${
+                        errors.email ? 'border-red-500' : 'border-gray-700'
+                      }`}
+                      placeholder="your@email.com"
+                    />
+                    {errors.email && <p className="text-red-400 text-xs mt-1">{errors.email}</p>}
+                  </div>
+
+                  <div>
+                    <label className="block text-sm text-gray-400 mb-2">Тема</label>
+                    <select
+                      value={formData.subject}
+                      onChange={(e) => setFormData({ ...formData, subject: e.target.value })}
+                      className="w-full px-4 py-3 bg-gray-900 border border-gray-700 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+                    >
+                      <option value="">Выберите тему</option>
+                      <option value="general">Общий вопрос</option>
+                      <option value="support">Техническая поддержка</option>
+                      <option value="sales">Продажи и тарифы</option>
+                      <option value="partnership">Партнёрство</option>
+                      <option value="bug">Сообщить об ошибке</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm text-gray-400 mb-2">Сообщение *</label>
+                    <textarea
+                      value={formData.message}
+                      onChange={(e) => setFormData({ ...formData, message: e.target.value })}
+                      rows={5}
+                      className={`w-full px-4 py-3 bg-gray-900 border rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 resize-none ${
+                        errors.message ? 'border-red-500' : 'border-gray-700'
+                      }`}
+                      placeholder="Опишите ваш вопрос..."
+                    />
+                    {errors.message && <p className="text-red-400 text-xs mt-1">{errors.message}</p>}
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={formState === 'sending'}
+                    className="w-full py-3 bg-gradient-to-r from-emerald-500 to-blue-600 rounded-xl text-white font-semibold hover:opacity-90 transition-opacity disabled:opacity-50"
+                  >
+                    {formState === 'sending' ? 'Отправка...' : 'Отправить сообщение'}
+                  </button>
+                </form>
+              )}
+            </div>
+
+            {/* Contact Info + FAQ */}
+            <div>
+              <h2 className="text-2xl font-bold text-white mb-6">Контактная информация</h2>
+              
+              <div className="space-y-6 mb-10">
                 <div className="flex items-start gap-4">
                   <div className="w-12 h-12 bg-gray-800 rounded-xl flex items-center justify-center flex-shrink-0">
                     <svg className="w-6 h-6 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -69,14 +181,14 @@ export default function ContactPage() {
                   </div>
                   <div>
                     <h3 className="text-white font-medium">Email</h3>
-                    <p className="text-gray-400">hello@docverify.com</p>
+                    <a href="mailto:hello@docverify.com" className="text-emerald-400 hover:underline">hello@docverify.com</a>
                   </div>
                 </div>
 
                 <div className="flex items-start gap-4">
                   <div className="w-12 h-12 bg-gray-800 rounded-xl flex items-center justify-center flex-shrink-0">
                     <svg className="w-6 h-6 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9 3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
                     </svg>
                   </div>
                   <div>
@@ -88,31 +200,17 @@ export default function ContactPage() {
                 <div className="flex items-start gap-4">
                   <div className="w-12 h-12 bg-gray-800 rounded-xl flex items-center justify-center flex-shrink-0">
                     <svg className="w-6 h-6 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
                   </div>
                   <div>
-                    <h3 className="text-white font-medium">Чат поддержки</h3>
-                    <p className="text-gray-400">Доступен в рабочее время</p>
+                    <h3 className="text-white font-medium">Время ответа</h3>
+                    <p className="text-gray-400">Обычно в течение 24 часов</p>
                   </div>
                 </div>
               </div>
 
-              <div className="mt-8 flex flex-wrap gap-3">
-                <button className="px-6 py-3 bg-gradient-to-r from-emerald-500 to-blue-600 rounded-xl text-white font-semibold hover:opacity-90 transition-opacity">
-                  Написать нам
-                </button>
-                <button className="px-6 py-3 bg-gray-800 border border-gray-700 rounded-xl text-gray-300 font-semibold hover:bg-gray-700 transition-colors">
-                  Начать чат
-                </button>
-                <button className="px-6 py-3 bg-gray-800 border border-gray-700 rounded-xl text-gray-300 font-semibold hover:bg-gray-700 transition-colors">
-                  Запланировать демо
-                </button>
-              </div>
-            </div>
-
-            {/* FAQ */}
-            <div>
+              {/* FAQ */}
               <h2 className="text-2xl font-bold text-white mb-6">Часто задаваемые вопросы</h2>
               <div className="space-y-3">
                 {faqs.map((faq, index) => (
@@ -124,9 +222,9 @@ export default function ContactPage() {
                       className="w-full px-6 py-4 text-left flex items-center justify-between hover:bg-gray-800/50 transition-colors"
                       onClick={() => setOpenFaq(openFaq === index ? null : index)}
                     >
-                      <span className="text-white font-medium text-sm">{faq.q}</span>
+                      <span className="text-white font-medium text-sm pr-4">{faq.q}</span>
                       <svg
-                        className={`w-5 h-5 text-gray-400 transition-transform ${openFaq === index ? 'rotate-180' : ''}`}
+                        className={`w-5 h-5 text-gray-400 transition-transform flex-shrink-0 ${openFaq === index ? 'rotate-180' : ''}`}
                         fill="none"
                         viewBox="0 0 24 24"
                         stroke="currentColor"

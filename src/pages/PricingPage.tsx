@@ -201,7 +201,7 @@ export default function PricingPage() {
           <p className="text-gray-400 mb-8">Начните проверять документы уже сегодня с нашим обнаружением мошенничества на базе ИИ.</p>
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
             <Link
-              to="/"
+              to="/upload"
               className="px-8 py-4 bg-gradient-to-r from-emerald-500 to-blue-600 rounded-xl text-white font-semibold hover:opacity-90 transition-opacity"
             >
               Начать бесплатный период
