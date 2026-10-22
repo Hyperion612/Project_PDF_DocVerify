@@ -44,6 +44,8 @@ export default function UploadPage() {
   const [progress, setProgress] = useState(0);
   const [aiProgress, setAiProgress] = useState(0);
   const [currentStep, setCurrentStep] = useState('');
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [analysisTime, setAnalysisTime] = useState<number>(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
 
@@ -54,6 +56,16 @@ export default function UploadPage() {
     setProgress(0);
     setAiProgress(0);
     setCurrentStep('Инициализация...');
+    
+    // Создаём превью для изображений
+    if (file.type.startsWith('image/')) {
+      const url = URL.createObjectURL(file);
+      setPreviewUrl(url);
+    } else {
+      setPreviewUrl(null);
+    }
+    
+    const startTime = Date.now();
 
     try {
       const fileType = detectFileType(file);
@@ -196,6 +208,7 @@ export default function UploadPage() {
 
       setProgress(100);
       setCurrentStep('Анализ завершён');
+      setAnalysisTime(Date.now() - startTime);
       setResult(fullResult);
       setState('complete');
     } catch (err: any) {
@@ -223,6 +236,11 @@ export default function UploadPage() {
     setProgress(0);
     setAiProgress(0);
     setCurrentStep('');
+    setAnalysisTime(0);
+    if (previewUrl) {
+      URL.revokeObjectURL(previewUrl);
+      setPreviewUrl(null);
+    }
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
@@ -358,14 +376,14 @@ export default function UploadPage() {
 
         {/* Results */}
         {state === 'complete' && result && (
-          <ResultsView result={result} onReset={reset} />
+          <ResultsView result={result} onReset={reset} previewUrl={previewUrl} analysisTime={analysisTime} />
         )}
       </div>
     </div>
   );
 }
 
-function ResultsView({ result, onReset }: { result: FullResult; onReset: () => void }) {
+function ResultsView({ result, onReset, previewUrl, analysisTime }: { result: FullResult; onReset: () => void; previewUrl?: string | null; analysisTime?: number }) {
   const navigate = useNavigate();
   
   const riskColor = {
@@ -407,6 +425,20 @@ function ResultsView({ result, onReset }: { result: FullResult; onReset: () => v
 
   return (
     <div className="space-y-6">
+      {/* Превью файла */}
+      {previewUrl && result.type === 'image' && (
+        <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6">
+          <h3 className="text-lg font-semibold text-white mb-4">🖼️ Превью изображения</h3>
+          <div className="flex justify-center">
+            <img 
+              src={previewUrl} 
+              alt="Preview" 
+              className="max-w-full h-auto rounded-lg max-h-96 object-contain"
+            />
+          </div>
+        </div>
+      )}
+
       {/* Main Result Card */}
       <div className={`bg-gradient-to-br ${riskBg[risk]} border ${riskBorder[risk]} rounded-2xl p-8`}>
         <div className="flex items-start justify-between flex-wrap gap-4">
@@ -422,6 +454,9 @@ function ResultsView({ result, onReset }: { result: FullResult; onReset: () => v
             <h2 className="text-2xl font-bold text-white mb-1">{result.fileName}</h2>
             <p className="text-gray-400 text-sm">
               {result.type === 'pdf' ? 'PDF документ' : 'Изображение'} • {formatFileSize(result.fileSize)}
+              {analysisTime && analysisTime > 0 && (
+                <span className="ml-2">• Анализ: {(analysisTime / 1000).toFixed(1)}с</span>
+              )}
             </p>
           </div>
           <div className="text-right">
@@ -444,6 +479,29 @@ function ResultsView({ result, onReset }: { result: FullResult; onReset: () => v
               }`}
               style={{ width: `${confidence}%` }}
             ></div>
+          </div>
+        </div>
+      </div>
+
+      {/* Сводка анализа */}
+      <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6">
+        <h3 className="text-lg font-semibold text-white mb-4">📊 Сводка анализа</h3>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="bg-gray-800/50 rounded-lg p-4 text-center">
+            <p className="text-3xl font-bold text-emerald-400">{checks.filter(c => c.status === 'pass').length}</p>
+            <p className="text-xs text-gray-400 mt-1">Пройдено</p>
+          </div>
+          <div className="bg-gray-800/50 rounded-lg p-4 text-center">
+            <p className="text-3xl font-bold text-yellow-400">{checks.filter(c => c.status === 'warning').length}</p>
+            <p className="text-xs text-gray-400 mt-1">Предупреждений</p>
+          </div>
+          <div className="bg-gray-800/50 rounded-lg p-4 text-center">
+            <p className="text-3xl font-bold text-red-400">{checks.filter(c => c.status === 'fail').length}</p>
+            <p className="text-xs text-gray-400 mt-1">Ошибок</p>
+          </div>
+          <div className="bg-gray-800/50 rounded-lg p-4 text-center">
+            <p className="text-3xl font-bold text-blue-400">{checks.length}</p>
+            <p className="text-xs text-gray-400 mt-1">Всего проверок</p>
           </div>
         </div>
       </div>

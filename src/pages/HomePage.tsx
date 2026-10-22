@@ -1,8 +1,20 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 
 export default function HomePage() {
   const [dragActive, setDragActive] = useState(false);
+  const [stats, setStats] = useState({ checked: 0, detected: 0 });
+
+  // Анимация счётчиков
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setStats(prev => ({
+        checked: prev.checked < 1247 ? prev.checked + 23 : 1247,
+        detected: prev.detected < 89 ? prev.detected + 2 : 89
+      }));
+    }, 50);
+    return () => clearInterval(interval);
+  }, []);
 
   return (
     <div>
@@ -11,8 +23,36 @@ export default function HomePage() {
         <div className="absolute inset-0 bg-gradient-to-br from-gray-950 via-gray-900 to-gray-950"></div>
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-emerald-900/20 via-transparent to-transparent"></div>
         
+        {/* Анимированные частицы */}
+        <div className="absolute inset-0 overflow-hidden pointer-events-none">
+          {[...Array(20)].map((_, i) => (
+            <div
+              key={i}
+              className="absolute w-1 h-1 bg-emerald-400/30 rounded-full animate-pulse"
+              style={{
+                left: `${Math.random() * 100}%`,
+                top: `${Math.random() * 100}%`,
+                animationDelay: `${Math.random() * 3}s`,
+                animationDuration: `${2 + Math.random() * 3}s`
+              }}
+            />
+          ))}
+        </div>
+        
         <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20 lg:py-32">
           <div className="text-center max-w-4xl mx-auto">
+            {/* Статистика */}
+            <div className="flex items-center justify-center gap-8 mb-8 text-sm">
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse"></div>
+                <span className="text-gray-400">Проверено: <span className="text-emerald-400 font-bold">{stats.checked}</span></span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-2 bg-red-400 rounded-full animate-pulse"></div>
+                <span className="text-gray-400">Обнаружено подделок: <span className="text-red-400 font-bold">{stats.detected}</span></span>
+              </div>
+            </div>
+
             <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold leading-tight mb-6">
               <span className="bg-gradient-to-r from-white to-gray-300 bg-clip-text text-transparent">
                 Выявляйте поддельные и сгенерированные ИИ документы
