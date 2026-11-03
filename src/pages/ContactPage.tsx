@@ -31,7 +31,7 @@ export default function ContactPage() {
     if (!validate()) return;
 
     // Проверка, что Access Key настроен
-    if (WEB3FORMS_ACCESS_KEY === 'YOUR_ACCESS_KEY_HERE') {
+    if (WEB3FORMS_ACCESS_KEY === 'f85b367b-32bd-4bc4-9f0e-879580a89757') {
       setErrorMessage('⚠️ Форма не настроена. Обратитесь к администратору сайта.');
       setFormState('error');
       return;
@@ -257,7 +257,7 @@ export default function ContactPage() {
                   <div>
                     <h3 className="text-white font-medium">Email</h3>
                     <a href="mailto:hello@docverify.com" className="text-emerald-400 hover:underline">
-                      hello@docverify.com
+                      docverify.pdf@gmail.com
                     </a>
                   </div>
                 </div>
