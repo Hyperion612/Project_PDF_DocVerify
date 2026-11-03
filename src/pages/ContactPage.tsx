@@ -1,7 +1,7 @@
 import { useState } from 'react';
 
 // ⚠️ ЗАМЕНИТЕ НА СВОЙ ACCESS KEY С https://web3forms.com
-const WEB3FORMS_ACCESS_KEY = 'YOUR_ACCESS_KEY_HERE';
+const WEB3FORMS_ACCESS_KEY = 'f85b367b-32bd-4bc4-9f0e-879580a89757';
 
 export default function ContactPage() {
   const [openFaq, setOpenFaq] = useState<number | null>(0);
