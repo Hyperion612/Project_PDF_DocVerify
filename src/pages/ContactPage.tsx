@@ -30,12 +30,7 @@ export default function ContactPage() {
     e.preventDefault();
     if (!validate()) return;
 
-    // Проверка, что Access Key настроен
-    if (WEB3FORMS_ACCESS_KEY === 'f85b367b-32bd-4bc4-9f0e-879580a89757') {
-      setErrorMessage('⚠️ Форма не настроена. Обратитесь к администратору сайта.');
-      setFormState('error');
-      return;
-    }
+    
 
     setFormState('sending');
     setErrorMessage('');
