@@ -256,7 +256,7 @@ export default function ContactPage() {
                   </div>
                   <div>
                     <h3 className="text-white font-medium">Email</h3>
-                    <a href="mailto:hello@docverify.com" className="text-emerald-400 hover:underline">
+                    <a href="mailto:docverify.pdf@gmail.com" className="text-emerald-400 hover:underline">
                       docverify.pdf@gmail.com
                     </a>
                   </div>
@@ -275,7 +275,7 @@ export default function ContactPage() {
                   </div>
                   <div>
                     <h3 className="text-white font-medium">Веб-сайт</h3>
-                    <p className="text-gray-400">www.docverify.com</p>
+                    <p className="text-gray-400">www.verdocsnow.online</p>
                   </div>
                 </div>
 

@@ -13,7 +13,7 @@ import HistoryPage from './pages/HistoryPage';
 function App() {
   return (
     <Router>
-      <div className="min-h-screen flex flex-col bg-gray-950 text-white">
+      <div className="min-h-[100dvh] flex flex-col bg-gray-950 text-white overflow-x-hidden">
         <Header />
         <main className="flex-1">
           <Routes>
